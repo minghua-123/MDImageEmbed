@@ -73,6 +73,16 @@ export default class MDImageEmbedPlugin extends Plugin {
 					await this.copyAsBase64(file);
 				});
 		});
+
+		// 菜单项: 导出为 Base64 格式文件
+		menu.addItem((item) => {
+			item
+				.setTitle('导出为 Base64 格式')
+				.setIcon('download')
+				.onClick(async () => {
+					await this.exportAsBase64(file);
+				});
+		});
 	}
 
 	// ========== 辅助方法: 读取前缀/后缀文件内容 ==========
@@ -135,6 +145,79 @@ export default class MDImageEmbedPlugin extends Plugin {
 		} catch (error) {
 			new Notice('❌ 复制失败: ' + error.message);
 			console.error('Copy failed:', error);
+		}
+	}
+
+	// ========== 功能 2: 导出为文件 ==========
+	async exportAsBase64(file: TFile) {
+		try {
+			let content = await this.app.vault.read(file);
+
+			// 添加前缀内容
+			const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
+			if (prefix) {
+				content = prefix + '\n\n' + content;
+			}
+
+			// 添加后缀内容
+			const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
+			if (suffix) {
+				content = content + '\n\n' + suffix;
+			}
+
+			const result = await this.convertMarkdownToBase64(content, file);
+
+			// 生成导出文件路径
+			const exportFileName = file.name.replace('.md', '_base64.md');
+			const exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+
+			// 写入文件
+			await this.app.vault.create(exportFilePath, result.content);
+
+			if (this.settings.showConversionLog) {
+				// 显示详细的处理结果
+				let message = '✅ 已导出为 Base64 格式文件\n';
+				message += `📁 导出路径: ${exportFilePath}\n\n`;
+				message += `📊 统计: ${result.convertedCount + result.skippedCount} 个图片\n`;
+				message += `   • 已转换: ${result.convertedCount}\n`;
+				message += `   • 已跳过: ${result.skippedCount}`;
+
+				// 如果启用了详细日志，显示每个图片的状态
+				if (this.settings.showDetailedLog) {
+					message += '\n\n';
+
+					// 显示每个图片的详细状态
+					const maxDisplay = 8; // 最多显示8个图片的详情
+					const detailsToShow = result.details.slice(0, maxDisplay);
+
+					for (const detail of detailsToShow) {
+						const fileName = detail.path.split('/').pop() || detail.path;
+						const shortName = fileName.length > 35 ? fileName.substring(0, 32) + '...' : fileName;
+
+						if (detail.status === 'success') {
+							message += `✓ ${shortName}\n`;
+						} else if (detail.status === 'failed') {
+							message += `✗ ${shortName}\n  → ${detail.reason}\n`;
+						} else if (detail.status === 'skipped') {
+							message += `⊘ ${shortName}\n  → ${detail.reason}\n`;
+						}
+					}
+
+					// 如果还有更多图片未显示
+					if (result.details.length > maxDisplay) {
+						const remaining = result.details.length - maxDisplay;
+						message += `\n... 还有 ${remaining} 个`;
+					}
+				}
+
+				// 显示时间更长的通知（8秒）
+				new Notice(message, 8000);
+			} else {
+				new Notice(`✅ 已导出为 Base64 格式文件: ${exportFileName}`);
+			}
+		} catch (error) {
+			new Notice('❌ 导出失败: ' + error.message);
+			console.error('Export failed:', error);
 		}
 	}
 

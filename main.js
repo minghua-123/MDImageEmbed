@@ -67,6 +67,11 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         await this.copyAsBase64(file);
       });
     });
+    menu.addItem((item) => {
+      item.setTitle("\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F").setIcon("download").onClick(async () => {
+        await this.exportAsBase64(file);
+      });
+    });
   }
   // ========== 辅助方法: 读取前缀/后缀文件内容 ==========
   async readTemplateFile(filePath) {
@@ -116,6 +121,67 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
     } catch (error) {
       new import_obsidian.Notice("\u274C \u590D\u5236\u5931\u8D25: " + error.message);
       console.error("Copy failed:", error);
+    }
+  }
+  // ========== 功能 2: 导出为文件 ==========
+  async exportAsBase64(file) {
+    try {
+      let content = await this.app.vault.read(file);
+      const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
+      if (prefix) {
+        content = prefix + "\n\n" + content;
+      }
+      const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
+      if (suffix) {
+        content = content + "\n\n" + suffix;
+      }
+      const result = await this.convertMarkdownToBase64(content, file);
+      const exportFileName = file.name.replace(".md", "_base64.md");
+      const exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+      await this.app.vault.create(exportFilePath, result.content);
+      if (this.settings.showConversionLog) {
+        let message = "\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6\n";
+        message += `\u{1F4C1} \u5BFC\u51FA\u8DEF\u5F84: ${exportFilePath}
+
+`;
+        message += `\u{1F4CA} \u7EDF\u8BA1: ${result.convertedCount + result.skippedCount} \u4E2A\u56FE\u7247
+`;
+        message += `   \u2022 \u5DF2\u8F6C\u6362: ${result.convertedCount}
+`;
+        message += `   \u2022 \u5DF2\u8DF3\u8FC7: ${result.skippedCount}`;
+        if (this.settings.showDetailedLog) {
+          message += "\n\n";
+          const maxDisplay = 8;
+          const detailsToShow = result.details.slice(0, maxDisplay);
+          for (const detail of detailsToShow) {
+            const fileName = detail.path.split("/").pop() || detail.path;
+            const shortName = fileName.length > 35 ? fileName.substring(0, 32) + "..." : fileName;
+            if (detail.status === "success") {
+              message += `\u2713 ${shortName}
+`;
+            } else if (detail.status === "failed") {
+              message += `\u2717 ${shortName}
+  \u2192 ${detail.reason}
+`;
+            } else if (detail.status === "skipped") {
+              message += `\u2298 ${shortName}
+  \u2192 ${detail.reason}
+`;
+            }
+          }
+          if (result.details.length > maxDisplay) {
+            const remaining = result.details.length - maxDisplay;
+            message += `
+... \u8FD8\u6709 ${remaining} \u4E2A`;
+          }
+        }
+        new import_obsidian.Notice(message, 8e3);
+      } else {
+        new import_obsidian.Notice(`\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6: ${exportFileName}`);
+      }
+    } catch (error) {
+      new import_obsidian.Notice("\u274C \u5BFC\u51FA\u5931\u8D25: " + error.message);
+      console.error("Export failed:", error);
     }
   }
   // ========== 显示详细处理结果 ==========
