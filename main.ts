@@ -5,7 +5,7 @@
  * @author minghua-123
  * @license MIT
  */
-import { Plugin, TFile, Notice, Menu, PluginSettingTab, App, Setting, Modal, ButtonComponent, TextComponent } from 'obsidian';
+import { Plugin, TFile, TFolder, Notice, Menu, PluginSettingTab, App, Setting, Modal, ButtonComponent, TextComponent, SuggestModal } from 'obsidian';
 
 // ========== 设置接口 ==========
 interface MDImageEmbedSettings {
@@ -636,16 +636,35 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		containerEl.createEl('h3', { text: '导出设置' });
 
 		// 设置 6: 默认导出路径
-		new Setting(containerEl)
+		const defaultPathSetting = new Setting(containerEl)
 			.setName('默认导出路径')
-			.setDesc('导出文件的默认保存路径，留空则保存在源文件所在目录')
-			.addText(text => text
+			.setDesc('导出文件的默认保存路径，留空则保存在源文件所在目录');
+		
+		let defaultPathInputEl: HTMLInputElement;
+		defaultPathSetting.addText(text => {
+			defaultPathInputEl = text.inputEl;
+			text
 				.setPlaceholder('exports/')
 				.setValue(this.plugin.settings.defaultExportPath)
 				.onChange(async (value) => {
 					this.plugin.settings.defaultExportPath = value.trim();
 					await this.plugin.saveSettings();
-				}));
+				});
+		});
+
+		// 添加文件夹选择按钮
+		defaultPathSetting.addButton(button => button
+			.setButtonText('浏览')
+			.onClick(() => {
+				const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
+					this.plugin.settings.defaultExportPath = selectedFolder.path;
+					if (defaultPathInputEl) {
+						defaultPathInputEl.value = selectedFolder.path;
+					}
+					this.plugin.saveSettings();
+				});
+				folderModal.open();
+			}));
 
 		// 设置 7: 显示侧边栏图标
 		new Setting(containerEl)
@@ -656,8 +675,8 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.showRibbonIcon = value;
 					await this.plugin.saveSettings();
-					// 重新加载插件以应用更改
-					this.plugin.app.workspace.trigger('reload-plugins');
+					// 直接调用更新方法，而不是重新加载插件
+					this.plugin.updateRibbonIcon();
 				}));
 
 	}
@@ -707,8 +726,14 @@ class ExportDialog extends Modal {
 		pathSetting.addButton(button => button
 			.setButtonText('浏览')
 			.onClick(() => {
-				// 由于Obsidian API限制，这里我们暂时只支持手动输入路径
-				new Notice('请手动输入文件夹路径');
+				// 打开文件夹选择器
+				const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
+					this.exportPath = selectedFolder.path;
+					if (pathInputEl) {
+						pathInputEl.value = selectedFolder.path;
+					}
+				});
+				folderModal.open();
 			}));
 
 		// 导出文件名设置
@@ -750,5 +775,46 @@ class ExportDialog extends Modal {
 	onClose() {
 		const { contentEl } = this;
 		contentEl.empty();
+	}
+}
+
+// ========== 文件夹选择器 ==========
+class FolderSuggestModal extends SuggestModal<TFolder> {
+	onChoose: (folder: TFolder) => void;
+	allFolders: TFolder[];
+
+	constructor(app: App, onChoose: (folder: TFolder) => void) {
+		super(app);
+		this.onChoose = onChoose;
+		this.allFolders = [];
+		this.collectFolders(app.vault.getRoot());
+		this.setPlaceholder('选择文件夹...');
+	}
+
+	// 递归收集所有文件夹
+	collectFolders(folder: TFolder) {
+		this.allFolders.push(folder);
+		for (const child of folder.children) {
+			if (child instanceof TFolder) {
+				this.collectFolders(child);
+			}
+		}
+	}
+
+	getSuggestions(query: string): TFolder[] | Promise<TFolder[]> {
+		// 过滤匹配查询的文件夹
+		return this.allFolders.filter(folder => {
+			const folderPath = folder.path.toLowerCase();
+			const queryLower = query.toLowerCase();
+			return folderPath.includes(queryLower) || (folder.name && folder.name.toLowerCase().includes(queryLower));
+		});
+	}
+
+	renderSuggestion(folder: TFolder, el: HTMLElement) {
+		el.createDiv({ text: folder.path === '/' ? '📁 根目录' : `📁 ${folder.path}` });
+	}
+
+	onChooseSuggestion(folder: TFolder, evt: MouseEvent | KeyboardEvent) {
+		this.onChoose(folder);
 	}
 }

@@ -476,14 +476,29 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "\u5BFC\u51FA\u8BBE\u7F6E" });
-    new import_obsidian.Setting(containerEl).setName("\u9ED8\u8BA4\u5BFC\u51FA\u8DEF\u5F84").setDesc("\u5BFC\u51FA\u6587\u4EF6\u7684\u9ED8\u8BA4\u4FDD\u5B58\u8DEF\u5F84\uFF0C\u7559\u7A7A\u5219\u4FDD\u5B58\u5728\u6E90\u6587\u4EF6\u6240\u5728\u76EE\u5F55").addText((text) => text.setPlaceholder("exports/").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
-      this.plugin.settings.defaultExportPath = value.trim();
-      await this.plugin.saveSettings();
+    const defaultPathSetting = new import_obsidian.Setting(containerEl).setName("\u9ED8\u8BA4\u5BFC\u51FA\u8DEF\u5F84").setDesc("\u5BFC\u51FA\u6587\u4EF6\u7684\u9ED8\u8BA4\u4FDD\u5B58\u8DEF\u5F84\uFF0C\u7559\u7A7A\u5219\u4FDD\u5B58\u5728\u6E90\u6587\u4EF6\u6240\u5728\u76EE\u5F55");
+    let defaultPathInputEl;
+    defaultPathSetting.addText((text) => {
+      defaultPathInputEl = text.inputEl;
+      text.setPlaceholder("exports/").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
+        this.plugin.settings.defaultExportPath = value.trim();
+        await this.plugin.saveSettings();
+      });
+    });
+    defaultPathSetting.addButton((button) => button.setButtonText("\u6D4F\u89C8").onClick(() => {
+      const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
+        this.plugin.settings.defaultExportPath = selectedFolder.path;
+        if (defaultPathInputEl) {
+          defaultPathInputEl.value = selectedFolder.path;
+        }
+        this.plugin.saveSettings();
+      });
+      folderModal.open();
     }));
     new import_obsidian.Setting(containerEl).setName("\u663E\u793A\u4FA7\u8FB9\u680F\u56FE\u6807").setDesc("\u5728\u5DE6\u4FA7\u8FB9\u680F\u663E\u793A MD Image Embed \u5BFC\u51FA\u6309\u94AE").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRibbonIcon).onChange(async (value) => {
       this.plugin.settings.showRibbonIcon = value;
       await this.plugin.saveSettings();
-      this.plugin.app.workspace.trigger("reload-plugins");
+      this.plugin.updateRibbonIcon();
     }));
   }
 };
@@ -508,7 +523,13 @@ var ExportDialog = class extends import_obsidian.Modal {
       });
     });
     pathSetting.addButton((button) => button.setButtonText("\u6D4F\u89C8").onClick(() => {
-      new import_obsidian.Notice("\u8BF7\u624B\u52A8\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84");
+      const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
+        this.exportPath = selectedFolder.path;
+        if (pathInputEl) {
+          pathInputEl.value = selectedFolder.path;
+        }
+      });
+      folderModal.open();
     }));
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u6587\u4EF6\u540D" });
     new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").addText((text) => text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
@@ -529,6 +550,37 @@ var ExportDialog = class extends import_obsidian.Modal {
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
+  }
+};
+var FolderSuggestModal = class extends import_obsidian.SuggestModal {
+  constructor(app, onChoose) {
+    super(app);
+    this.onChoose = onChoose;
+    this.allFolders = [];
+    this.collectFolders(app.vault.getRoot());
+    this.setPlaceholder("\u9009\u62E9\u6587\u4EF6\u5939...");
+  }
+  // 递归收集所有文件夹
+  collectFolders(folder) {
+    this.allFolders.push(folder);
+    for (const child of folder.children) {
+      if (child instanceof import_obsidian.TFolder) {
+        this.collectFolders(child);
+      }
+    }
+  }
+  getSuggestions(query) {
+    return this.allFolders.filter((folder) => {
+      const folderPath = folder.path.toLowerCase();
+      const queryLower = query.toLowerCase();
+      return folderPath.includes(queryLower) || folder.name && folder.name.toLowerCase().includes(queryLower);
+    });
+  }
+  renderSuggestion(folder, el) {
+    el.createDiv({ text: folder.path === "/" ? "\u{1F4C1} \u6839\u76EE\u5F55" : `\u{1F4C1} ${folder.path}` });
+  }
+  onChooseSuggestion(folder, evt) {
+    this.onChoose(folder);
   }
 };
 /**
