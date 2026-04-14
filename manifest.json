@@ -1,7 +1,7 @@
 {
 	"id": "md-image-embed",
 	"name": "MD Image Embed",
-	"version": "2.3.0",
+	"version": "2.4.0",
 	"minAppVersion": "0.15.0",
 	"description": "Convert local images in Markdown to Base64 embedded format. Perfect for exporting notes, publishing blogs, and sharing documents.",
 	"author": "minghua-123",

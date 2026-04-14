@@ -1,3 +1,37 @@
-/* MDImageEmbed 插件样式 */
+/* MD Image Embed 插件样式 */
 
-/* 如果需要自定义样式，可以在这里添加 */
+/* 导出设置对话框中的路径设置样式 */
+.md-image-embed-path-setting .setting-item-name {
+    display: block;
+    width: 100%;
+    margin-bottom: 5px;
+}
+
+.md-image-embed-path-setting .setting-item-description {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.md-image-embed-path-setting .setting-item-control {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+}
+
+.md-image-embed-path-setting .setting-item-control .setting-input {
+    width: 100%;
+    min-width: 300px;
+}
+
+.md-image-embed-path-setting .setting-item-control .setting-button {
+    margin-left: 0 !important;
+    margin-top: 5px;
+}
+
+.md-image-embed-path-setting .setting-item-control .setting-button-container {
+    display: flex;
+    gap: 8px;
+    margin-top: 5px;
+}

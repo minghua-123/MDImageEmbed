@@ -547,7 +547,7 @@ var ExportDialog = class extends import_obsidian.Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "\u5BFC\u51FA\u8BBE\u7F6E" });
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u8DEF\u5F84" });
-    const pathSetting = new import_obsidian.Setting(contentEl).setName("\u5BFC\u51FA\u6587\u4EF6\u5939").setDesc("\u9009\u62E9\u5BFC\u51FA\u6587\u4EF6\u7684\u4FDD\u5B58\u4F4D\u7F6E");
+    const pathSetting = new import_obsidian.Setting(contentEl).setName("\u5BFC\u51FA\u6587\u4EF6\u5939").setDesc("\u9009\u62E9\u5BFC\u51FA\u6587\u4EF6\u7684\u4FDD\u5B58\u4F4D\u7F6E").setClass("md-image-embed-path-setting");
     let pathInputEl;
     pathSetting.addText((text) => {
       pathInputEl = text.inputEl;

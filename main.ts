@@ -756,7 +756,8 @@ class ExportDialog extends Modal {
 		contentEl.createEl('h3', { text: '导出路径' });
 		const pathSetting = new Setting(contentEl)
 			.setName('导出文件夹')
-			.setDesc('选择导出文件的保存位置');
+			.setDesc('选择导出文件的保存位置')
+			.setClass('md-image-embed-path-setting');
 
 		// 添加文件夹选择器（优化输入框大小）
 		let pathInputEl: HTMLInputElement;

@@ -1,70 +1,108 @@
 # MD Image Embed
 
-MDImageEmbed 是一个 Obsidian 插件，可将 Markdown 文件中的本地图片转换为 Base64 内嵌格式。适用于导出笔记、发布博客或分享文档，无需依赖外部图片文件。
+Obsidian 插件，用于将 Markdown 中的本地图片转换为 Base64 嵌入格式。适用于导出笔记、发布博客和分享文档。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed)](https://obsidian.md)
+## 功能特点
 
-## 功能特性
-
-- **一键转换**：右键菜单 → 复制为 Base64 格式到剪贴板
-- **智能路径解析**：支持 Obsidian 的各种图片路径格式
-- **防转载保护**：从模板文件添加自定义前缀/后缀（v1.1.0）
-- **格式支持**：PNG、JPG、JPEG、GIF、WebP、SVG、BMP
-- **Wiki 链接支持**：将 `![[image.png]]` 转换为带 Base64 的标准 Markdown
+- **复制为 Base64 格式**：将当前 Markdown 文件中的本地图片转换为 Base64 格式并复制到剪贴板
+- **导出为 Base64 格式文件**：将当前 Markdown 文件中的本地图片转换为 Base64 格式并导出为新文件
+- **侧边栏导出按钮**：在左侧边栏添加快捷导出按钮
+- **导出设置**：支持设置默认导出路径和文件名
+- **双浏览模式**：支持在 Vault 内浏览和系统浏览两种方式选择文件夹
+- **防转载保护**：支持添加前缀和后缀文件内容
+- **详细日志**：支持显示转换过程的详细日志
+- **多格式支持**：支持标准 Markdown 图片语法和 Obsidian Wiki 链接语法
 
 ## 安装方法
 
-### 手动安装
+1. 使用 BRAT 插件安装：
+   - 打开 BRAT 插件
+   - 点击 "Add a beta plugin"
+   - 输入 `minghua-123/MDImageEmbed`
+   - 点击 "Add plugin"
+   - 启用插件
 
-1. 从最新 Release 下载 `main.js`、`manifest.json` 和 `styles.css`
-2. 创建文件夹 `<Vault>/.obsidian/plugins/md-image-embed/`
-3. 将文件复制到该文件夹
-4. 重启 Obsidian，在 设置 → 第三方插件 中启用插件
-
-### 从源码构建
-
-```bash
-git clone https://github.com/MZSH-ObsidianPlugins/MDImageEmbed.git
-cd MDImageEmbed
-npm install
-npm run build
-```
+2. 手动安装：
+   - 下载最新版本的 `main.js`、`manifest.json` 和 `styles.css` 文件
+   - 将文件复制到 Obsidian 插件目录的 `md-image-embed` 文件夹中
+   - 重启 Obsidian 并启用插件
 
 ## 使用方法
 
-1. 在 Obsidian 文件浏览器中右键点击任意 `.md` 文件
-2. 选择 **复制为 Base64 格式**
-3. 将转换后的内容粘贴到任意位置
+### 方法 1：右键菜单
+1. 在文件浏览器中右键点击 Markdown 文件
+2. 选择 "复制为 Base64 格式" 或 "导出为 Base64 格式"
 
-### 设置选项
+### 方法 2：侧边栏按钮
+1. 打开一个 Markdown 文件
+2. 点击左侧边栏的下载图标按钮
+3. 在弹出的对话框中设置导出选项
+4. 点击 "导出" 按钮
 
-在 **设置 → 第三方插件 → MD Image Embed** 中配置：
+## 设置选项
 
 - **显示转换日志**：在通知中显示转换摘要信息
 - **显示详细日志**：在通知中显示每个图片的状态
-- **转换 Wiki 链接**：将 `![[image.png]]` 转换为标准 Markdown
-- **跳过 Base64 图片**：跳过已转换的 Base64 图片
-- **前缀/后缀文件路径**：在文章前后添加自定义内容（用于防转载保护）
+- **转换 Wiki 链接**：将 Obsidian Wiki 链接 (![[image.png]]) 转换为标准 Markdown Base64 格式
+- **跳过 Base64 图片**：跳过已经是 Base64 格式的图片
+- **前缀文件路径**：添加到文章开头的 Markdown 文件路径
+- **后缀文件路径**：添加到文章结尾的 Markdown 文件路径
+- **默认导出路径**：导出文件的默认保存路径
+- **显示侧边栏图标**：在左侧边栏显示 MD Image Embed 导出按钮
 
-### 防转载保护
+## 更新日志
 
-添加版权声明或作者信息：
+### 版本 2.4.0 (2026-04-14)
+- 优化：导出设置对话框的排版，解决标签被输入框挤压的问题
+- 新增：添加了 styles.css 文件，提供更好的样式支持
 
-1. 创建模板文件（如 `templates/prefix.md`、`templates/suffix.md`）
-2. 在插件设置中输入文件路径
-3. 复制时会自动添加内容
+### 版本 2.3.0 (2026-04-14)
+- 新增：添加系统文件夹浏览功能
+- 新增：支持双浏览模式（Vault内浏览和系统浏览）
+- 优化：输入框大小，确保路径能够完整显示
+- 变更：设置为桌面端专用插件
+
+### 版本 2.2.0 (2026-04-14)
+- 修复：侧边栏按钮的实时开启/关闭功能
+- 新增：导出设置对话框，支持设置导出位置和文件名
+- 优化：导出路径设置，支持默认导出路径
+
+### 版本 2.0.0 (2026-04-14)
+- 新增：侧边栏导出按钮
+- 新增：导出地址设置
+- 优化：整体功能重构
+
+### 版本 1.1.2 (2026-04-14)
+- 新增：导出为文件功能
+- 优化：导出文件命名规则
+
+### 版本 1.1.1 (2026-04-14)
+- 汉化：将所有界面元素改为中文
+- 优化：通知消息和日志消息的中文显示
+
+### 版本 1.0.0 (2026-04-14)
+- 初始版本
+- 实现基本的图片转 Base64 功能
+- 支持复制到剪贴板
+- 支持设置面板
+
+## 技术实现
+
+- 使用 TypeScript 开发
+- 支持 Obsidian API
+- 支持 Electron 系统对话框（桌面端）
+- 支持 Vault 内文件操作
 
 ## 注意事项
 
-- 仅支持本地图片（网络 URL 会被跳过）
-- Base64 编码会使文件体积增加约 33%
-- 建议仅用于导出/分享场景
+- 本插件仅在桌面端可用
+- 转换后的 Base64 格式图片会增加文件大小
+- 建议仅在需要导出或分享时使用
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
 
 MIT License
-
-## 联系方式
-
-邮箱：mengzhishanghun@outlook.com
