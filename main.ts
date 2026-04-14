@@ -7,6 +7,12 @@
  */
 import { Plugin, TFile, TFolder, Notice, Menu, PluginSettingTab, App, Setting, Modal, ButtonComponent, TextComponent, SuggestModal } from 'obsidian';
 
+// 导入Electron模块（仅桌面端可用）
+const { remote } = require('electron');
+const { dialog } = remote;
+const path = require('path');
+const fs = require('fs');
+
 // ========== 设置接口 ==========
 interface MDImageEmbedSettings {
 	showConversionLog: boolean;        // 是否显示转换日志
@@ -643,6 +649,9 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		let defaultPathInputEl: HTMLInputElement;
 		defaultPathSetting.addText(text => {
 			defaultPathInputEl = text.inputEl;
+			// 优化输入框大小
+			defaultPathInputEl.style.width = '100%';
+			defaultPathInputEl.style.minWidth = '300px';
 			text
 				.setPlaceholder('exports/')
 				.setValue(this.plugin.settings.defaultExportPath)
@@ -652,9 +661,9 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 				});
 		});
 
-		// 添加文件夹选择按钮
+		// 添加Vault文件夹选择按钮
 		defaultPathSetting.addButton(button => button
-			.setButtonText('浏览')
+			.setButtonText('Vault内浏览')
 			.onClick(() => {
 				const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
 					this.plugin.settings.defaultExportPath = selectedFolder.path;
@@ -664,6 +673,45 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 					this.plugin.saveSettings();
 				});
 				folderModal.open();
+			}));
+
+		// 添加系统文件夹选择按钮
+		defaultPathSetting.addButton(button => button
+			.setButtonText('系统浏览')
+			.onClick(async () => {
+				try {
+					// 获取Vault的基础路径
+					const vaultPath = (this.app.vault.adapter as any).basePath;
+					
+					// 调用系统文件夹选择对话框
+					const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
+						title: '选择默认导出文件夹',
+						defaultPath: vaultPath,
+						properties: ['openDirectory', 'createDirectory']
+					});
+
+					if (!result.canceled && result.filePaths.length > 0) {
+						const selectedPath = result.filePaths[0];
+						
+						// 转换为Vault相对路径
+						const relativePath = path.relative(vaultPath, selectedPath);
+						if (relativePath.startsWith('..')) {
+							// 如果选择的路径在Vault外部，显示警告
+							new Notice('请选择Vault内的文件夹');
+						} else {
+							// 转换为Vault路径格式
+							const vaultPathFormatted = relativePath.replace(/\\/g, '/') || '/';
+							this.plugin.settings.defaultExportPath = vaultPathFormatted;
+							if (defaultPathInputEl) {
+								defaultPathInputEl.value = vaultPathFormatted;
+							}
+							await this.plugin.saveSettings();
+						}
+					}
+				} catch (error) {
+					new Notice('选择文件夹失败: ' + error.message);
+					console.error('Folder selection failed:', error);
+				}
 			}));
 
 		// 设置 7: 显示侧边栏图标
@@ -710,10 +758,13 @@ class ExportDialog extends Modal {
 			.setName('导出文件夹')
 			.setDesc('选择导出文件的保存位置');
 
-		// 添加文件夹选择器
+		// 添加文件夹选择器（优化输入框大小）
 		let pathInputEl: HTMLInputElement;
 		pathSetting.addText(text => {
 			pathInputEl = text.inputEl;
+			// 优化输入框大小
+			pathInputEl.style.width = '100%';
+			pathInputEl.style.minWidth = '300px';
 			text
 				.setPlaceholder('输入文件夹路径')
 				.setValue(this.exportPath)
@@ -722,11 +773,11 @@ class ExportDialog extends Modal {
 				});
 		});
 
-		// 添加文件夹选择按钮
+		// 添加Vault文件夹选择按钮
 		pathSetting.addButton(button => button
-			.setButtonText('浏览')
+			.setButtonText('Vault内浏览')
 			.onClick(() => {
-				// 打开文件夹选择器
+				// 打开Vault文件夹选择器
 				const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
 					this.exportPath = selectedFolder.path;
 					if (pathInputEl) {
@@ -734,6 +785,44 @@ class ExportDialog extends Modal {
 					}
 				});
 				folderModal.open();
+			}));
+
+		// 添加系统文件夹选择按钮
+		pathSetting.addButton(button => button
+			.setButtonText('系统浏览')
+			.onClick(async () => {
+				try {
+					// 获取Vault的基础路径
+					const vaultPath = (this.app.vault.adapter as any).basePath;
+					
+					// 调用系统文件夹选择对话框
+					const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
+						title: '选择导出文件夹',
+						defaultPath: vaultPath,
+						properties: ['openDirectory', 'createDirectory']
+					});
+
+					if (!result.canceled && result.filePaths.length > 0) {
+						const selectedPath = result.filePaths[0];
+						
+						// 转换为Vault相对路径
+						const relativePath = path.relative(vaultPath, selectedPath);
+						if (relativePath.startsWith('..')) {
+							// 如果选择的路径在Vault外部，显示警告
+							new Notice('请选择Vault内的文件夹');
+						} else {
+							// 转换为Vault路径格式
+							const vaultPathFormatted = relativePath.replace(/\\/g, '/') || '/';
+							this.exportPath = vaultPathFormatted;
+							if (pathInputEl) {
+								pathInputEl.value = vaultPathFormatted;
+							}
+						}
+					}
+				} catch (error) {
+					new Notice('选择文件夹失败: ' + error.message);
+					console.error('Folder selection failed:', error);
+				}
 			}));
 
 		// 导出文件名设置

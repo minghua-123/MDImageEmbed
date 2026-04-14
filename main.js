@@ -28,6 +28,10 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
+var { remote } = require("electron");
+var { dialog } = remote;
+var path = require("path");
+var fs = require("fs");
 var DEFAULT_SETTINGS = {
   showConversionLog: false,
   showDetailedLog: false,
@@ -480,12 +484,14 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
     let defaultPathInputEl;
     defaultPathSetting.addText((text) => {
       defaultPathInputEl = text.inputEl;
+      defaultPathInputEl.style.width = "100%";
+      defaultPathInputEl.style.minWidth = "300px";
       text.setPlaceholder("exports/").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
         this.plugin.settings.defaultExportPath = value.trim();
         await this.plugin.saveSettings();
       });
     });
-    defaultPathSetting.addButton((button) => button.setButtonText("\u6D4F\u89C8").onClick(() => {
+    defaultPathSetting.addButton((button) => button.setButtonText("Vault\u5185\u6D4F\u89C8").onClick(() => {
       const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
         this.plugin.settings.defaultExportPath = selectedFolder.path;
         if (defaultPathInputEl) {
@@ -494,6 +500,33 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
         this.plugin.saveSettings();
       });
       folderModal.open();
+    }));
+    defaultPathSetting.addButton((button) => button.setButtonText("\u7CFB\u7EDF\u6D4F\u89C8").onClick(async () => {
+      try {
+        const vaultPath = this.app.vault.adapter.basePath;
+        const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
+          title: "\u9009\u62E9\u9ED8\u8BA4\u5BFC\u51FA\u6587\u4EF6\u5939",
+          defaultPath: vaultPath,
+          properties: ["openDirectory", "createDirectory"]
+        });
+        if (!result.canceled && result.filePaths.length > 0) {
+          const selectedPath = result.filePaths[0];
+          const relativePath = path.relative(vaultPath, selectedPath);
+          if (relativePath.startsWith("..")) {
+            new import_obsidian.Notice("\u8BF7\u9009\u62E9Vault\u5185\u7684\u6587\u4EF6\u5939");
+          } else {
+            const vaultPathFormatted = relativePath.replace(/\\/g, "/") || "/";
+            this.plugin.settings.defaultExportPath = vaultPathFormatted;
+            if (defaultPathInputEl) {
+              defaultPathInputEl.value = vaultPathFormatted;
+            }
+            await this.plugin.saveSettings();
+          }
+        }
+      } catch (error) {
+        new import_obsidian.Notice("\u9009\u62E9\u6587\u4EF6\u5939\u5931\u8D25: " + error.message);
+        console.error("Folder selection failed:", error);
+      }
     }));
     new import_obsidian.Setting(containerEl).setName("\u663E\u793A\u4FA7\u8FB9\u680F\u56FE\u6807").setDesc("\u5728\u5DE6\u4FA7\u8FB9\u680F\u663E\u793A MD Image Embed \u5BFC\u51FA\u6309\u94AE").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRibbonIcon).onChange(async (value) => {
       this.plugin.settings.showRibbonIcon = value;
@@ -518,11 +551,13 @@ var ExportDialog = class extends import_obsidian.Modal {
     let pathInputEl;
     pathSetting.addText((text) => {
       pathInputEl = text.inputEl;
+      pathInputEl.style.width = "100%";
+      pathInputEl.style.minWidth = "300px";
       text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84").setValue(this.exportPath).onChange((value) => {
         this.exportPath = value;
       });
     });
-    pathSetting.addButton((button) => button.setButtonText("\u6D4F\u89C8").onClick(() => {
+    pathSetting.addButton((button) => button.setButtonText("Vault\u5185\u6D4F\u89C8").onClick(() => {
       const folderModal = new FolderSuggestModal(this.app, (selectedFolder) => {
         this.exportPath = selectedFolder.path;
         if (pathInputEl) {
@@ -530,6 +565,32 @@ var ExportDialog = class extends import_obsidian.Modal {
         }
       });
       folderModal.open();
+    }));
+    pathSetting.addButton((button) => button.setButtonText("\u7CFB\u7EDF\u6D4F\u89C8").onClick(async () => {
+      try {
+        const vaultPath = this.app.vault.adapter.basePath;
+        const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
+          title: "\u9009\u62E9\u5BFC\u51FA\u6587\u4EF6\u5939",
+          defaultPath: vaultPath,
+          properties: ["openDirectory", "createDirectory"]
+        });
+        if (!result.canceled && result.filePaths.length > 0) {
+          const selectedPath = result.filePaths[0];
+          const relativePath = path.relative(vaultPath, selectedPath);
+          if (relativePath.startsWith("..")) {
+            new import_obsidian.Notice("\u8BF7\u9009\u62E9Vault\u5185\u7684\u6587\u4EF6\u5939");
+          } else {
+            const vaultPathFormatted = relativePath.replace(/\\/g, "/") || "/";
+            this.exportPath = vaultPathFormatted;
+            if (pathInputEl) {
+              pathInputEl.value = vaultPathFormatted;
+            }
+          }
+        }
+      } catch (error) {
+        new import_obsidian.Notice("\u9009\u62E9\u6587\u4EF6\u5939\u5931\u8D25: " + error.message);
+        console.error("Folder selection failed:", error);
+      }
     }));
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u6587\u4EF6\u540D" });
     new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").addText((text) => text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
