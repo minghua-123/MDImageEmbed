@@ -177,7 +177,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         if (this.settings.skipBase64Images && imagePath.startsWith("data:image")) {
           skippedCount++;
           const displayPath = imagePath.substring(0, 30) + "...";
-          details.push({ path: displayPath, status: "skipped", reason: "Already Base64" });
+          details.push({ path: displayPath, status: "skipped", reason: "\u5DF2\u662F Base64 \u683C\u5F0F" });
           if (this.settings.showConversionLog) {
             console.log(`[\u8DF3\u8FC7] ${displayPath} - \u539F\u56E0: \u5DF2\u662F Base64 \u683C\u5F0F`);
           }
@@ -185,7 +185,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
         if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
           skippedCount++;
-          details.push({ path: imagePath, status: "skipped", reason: "Network image (not supported)" });
+          details.push({ path: imagePath, status: "skipped", reason: "\u7F51\u7EDC\u56FE\u7247\uFF08\u4E0D\u652F\u6301\uFF09" });
           if (this.settings.showConversionLog) {
             console.log(`[\u8DF3\u8FC7] ${imagePath} - \u539F\u56E0: \u7F51\u7EDC\u56FE\u7247\u4E0D\u652F\u6301\u8F6C\u6362`);
           }
@@ -211,7 +211,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         const displayPath = `![[${imageName}]]`;
         if (!this.settings.convertWikiLinks) {
           skippedCount++;
-          details.push({ path: displayPath, status: "skipped", reason: "Wiki link conversion disabled" });
+          details.push({ path: displayPath, status: "skipped", reason: "Wiki \u94FE\u63A5\u8F6C\u6362\u5DF2\u7981\u7528" });
           if (this.settings.showConversionLog) {
             console.log(`[\u8DF3\u8FC7] ${displayPath} - \u539F\u56E0: Wiki \u94FE\u63A5\u8F6C\u6362\u5DF2\u7981\u7528`);
           }

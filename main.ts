@@ -139,7 +139,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 	}
 
 	// ========== 显示详细处理结果 ==========
-	showDetailedResults(result: {content: string, convertedCount: number, skippedCount: number, details: Array<{path: string, status: string, reason?: string}>}) {
+	showDetailedResults(result: { content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }) {
 		const total = result.convertedCount + result.skippedCount;
 
 		// 主通知
@@ -185,7 +185,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 	}
 
 	// ========== 核心转换逻辑 ==========
-	async convertMarkdownToBase64(content: string, sourceFile: TFile): Promise<{content: string, convertedCount: number, skippedCount: number, details: Array<{path: string, status: string, reason?: string}>}> {
+	async convertMarkdownToBase64(content: string, sourceFile: TFile): Promise<{ content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }> {
 		// 匹配 Markdown 图片语法: ![alt](path) 或 ![alt](<path>)
 		// 支持 Obsidian 的 ![[image.png]] 语法
 		const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]/gi;
@@ -193,7 +193,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 		let result = content;
 		let convertedCount = 0;
 		let skippedCount = 0;
-		const details: Array<{path: string, status: string, reason?: string}> = [];
+		const details: Array<{ path: string, status: string, reason?: string }> = [];
 
 		const matches = [...content.matchAll(imgRegex)];
 
@@ -213,7 +213,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 				if (this.settings.skipBase64Images && imagePath.startsWith('data:image')) {
 					skippedCount++;
 					const displayPath = imagePath.substring(0, 30) + '...';
-					details.push({path: displayPath, status: 'skipped', reason: 'Already Base64'});
+					details.push({ path: displayPath, status: 'skipped', reason: '已是 Base64 格式' });
 					if (this.settings.showConversionLog) {
 						console.log(`[跳过] ${displayPath} - 原因: 已是 Base64 格式`);
 					}
@@ -223,7 +223,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 				// 跳过网络图片（不支持）
 				if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
 					skippedCount++;
-					details.push({path: imagePath, status: 'skipped', reason: 'Network image (not supported)'});
+					details.push({ path: imagePath, status: 'skipped', reason: '网络图片（不支持）' });
 					if (this.settings.showConversionLog) {
 						console.log(`[跳过] ${imagePath} - 原因: 网络图片不支持转换`);
 					}
@@ -235,13 +235,13 @@ export default class MDImageEmbedPlugin extends Plugin {
 				if (base64) {
 					result = result.replace(fullMatch, `![${altText}](${base64})`);
 					convertedCount++;
-					details.push({path: imagePath, status: 'success'});
+					details.push({ path: imagePath, status: 'success' });
 					if (this.settings.showConversionLog) {
 						console.log(`[成功] ${imagePath} - 已转换为 Base64`);
 					}
 				} else {
 					skippedCount++;
-					details.push({path: imagePath, status: 'failed', reason: 'File not found'});
+					details.push({ path: imagePath, status: 'failed', reason: 'File not found' });
 					if (this.settings.showConversionLog) {
 						console.log(`[失败] ${imagePath} - 原因: 文件未找到或读取失败`);
 					}
@@ -255,7 +255,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 				// 如果不转换 Wiki 链接，跳过
 				if (!this.settings.convertWikiLinks) {
 					skippedCount++;
-					details.push({path: displayPath, status: 'skipped', reason: 'Wiki link conversion disabled'});
+					details.push({ path: displayPath, status: 'skipped', reason: 'Wiki 链接转换已禁用' });
 					if (this.settings.showConversionLog) {
 						console.log(`[跳过] ${displayPath} - 原因: Wiki 链接转换已禁用`);
 					}
@@ -268,13 +268,13 @@ export default class MDImageEmbedPlugin extends Plugin {
 					// 转换为标准 Markdown 语法
 					result = result.replace(fullMatch, `![${imageName}](${base64})`);
 					convertedCount++;
-					details.push({path: displayPath, status: 'success'});
+					details.push({ path: displayPath, status: 'success' });
 					if (this.settings.showConversionLog) {
 						console.log(`[成功] ${displayPath} - 已转换为 Base64`);
 					}
 				} else {
 					skippedCount++;
-					details.push({path: displayPath, status: 'failed', reason: 'File not found'});
+					details.push({ path: displayPath, status: 'failed', reason: 'File not found' });
 					if (this.settings.showConversionLog) {
 						console.log(`[失败] ${displayPath} - 原因: 文件未找到或读取失败`);
 					}
