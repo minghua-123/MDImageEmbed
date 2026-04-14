@@ -15,6 +15,8 @@ interface MDImageEmbedSettings {
 	skipBase64Images: boolean;          // 是否跳过已有 Base64
 	prefixFilePath: string;             // 前缀文件路径（添加到文章开头）
 	suffixFilePath: string;             // 后缀文件路径（添加到文章结尾）
+	defaultExportPath: string;          // 默认导出路径
+	showRibbonIcon: boolean;            // 是否显示侧边栏图标
 }
 
 const DEFAULT_SETTINGS: MDImageEmbedSettings = {
@@ -23,7 +25,9 @@ const DEFAULT_SETTINGS: MDImageEmbedSettings = {
 	convertWikiLinks: true,
 	skipBase64Images: true,
 	prefixFilePath: '',
-	suffixFilePath: ''
+	suffixFilePath: '',
+	defaultExportPath: '',
+	showRibbonIcon: true
 }
 
 // ========== 主插件类 ==========
@@ -45,6 +49,17 @@ export default class MDImageEmbedPlugin extends Plugin {
 				}
 			})
 		);
+
+		// 注册侧边栏图标
+		this.addRibbonIcon('download', 'MD Image Embed 导出', async () => {
+			// 获取当前活动文件
+			const activeFile = this.app.workspace.getActiveFile();
+			if (activeFile instanceof TFile && activeFile.extension === 'md') {
+				await this.exportAsBase64(activeFile);
+			} else {
+				new Notice('请先打开一个 Markdown 文件');
+			}
+		});
 
 		console.log('MD Image Embed plugin loaded');
 	}
@@ -169,7 +184,16 @@ export default class MDImageEmbedPlugin extends Plugin {
 
 			// 生成导出文件路径
 			const exportFileName = file.name.replace('.md', '_base64.md');
-			const exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+			let exportFilePath;
+			
+			// 检查是否设置了默认导出路径
+			if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== '') {
+				// 使用默认导出路径
+				exportFilePath = `${this.settings.defaultExportPath.trim()}/${exportFileName}`;
+			} else {
+				// 使用源文件所在目录
+				exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+			}
 
 			// 写入文件
 			await this.app.vault.create(exportFilePath, result.content);
@@ -582,5 +606,34 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 					this.plugin.settings.suffixFilePath = value.trim();
 					await this.plugin.saveSettings();
 				}));
+
+		// 分隔线
+		containerEl.createEl('h3', { text: '导出设置' });
+
+		// 设置 6: 默认导出路径
+		new Setting(containerEl)
+			.setName('默认导出路径')
+			.setDesc('导出文件的默认保存路径，留空则保存在源文件所在目录')
+			.addText(text => text
+				.setPlaceholder('exports/')
+				.setValue(this.plugin.settings.defaultExportPath)
+				.onChange(async (value) => {
+					this.plugin.settings.defaultExportPath = value.trim();
+					await this.plugin.saveSettings();
+				}));
+
+		// 设置 7: 显示侧边栏图标
+		new Setting(containerEl)
+			.setName('显示侧边栏图标')
+			.setDesc('在左侧边栏显示 MD Image Embed 导出按钮')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showRibbonIcon)
+				.onChange(async (value) => {
+					this.plugin.settings.showRibbonIcon = value;
+					await this.plugin.saveSettings();
+					// 重新加载插件以应用更改
+					this.plugin.app.workspace.trigger('reload-plugins');
+				}));
+
 	}
 }

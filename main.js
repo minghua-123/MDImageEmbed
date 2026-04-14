@@ -34,7 +34,9 @@ var DEFAULT_SETTINGS = {
   convertWikiLinks: true,
   skipBase64Images: true,
   prefixFilePath: "",
-  suffixFilePath: ""
+  suffixFilePath: "",
+  defaultExportPath: "",
+  showRibbonIcon: true
 };
 var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 插件生命周期 ==========
@@ -48,6 +50,14 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
       })
     );
+    this.addRibbonIcon("download", "MD Image Embed \u5BFC\u51FA", async () => {
+      const activeFile = this.app.workspace.getActiveFile();
+      if (activeFile instanceof import_obsidian.TFile && activeFile.extension === "md") {
+        await this.exportAsBase64(activeFile);
+      } else {
+        new import_obsidian.Notice("\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A Markdown \u6587\u4EF6");
+      }
+    });
     console.log("MD Image Embed plugin loaded");
   }
   onunload() {
@@ -137,7 +147,12 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       }
       const result = await this.convertMarkdownToBase64(content, file);
       const exportFileName = file.name.replace(".md", "_base64.md");
-      const exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+      let exportFilePath;
+      if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== "") {
+        exportFilePath = `${this.settings.defaultExportPath.trim()}/${exportFileName}`;
+      } else {
+        exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
+      }
       await this.app.vault.create(exportFilePath, result.content);
       if (this.settings.showConversionLog) {
         let message = "\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6\n";
@@ -438,6 +453,16 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("\u540E\u7F00\u6587\u4EF6\u8DEF\u5F84").setDesc('\u6DFB\u52A0\u5230\u6587\u7AE0\u7ED3\u5C3E\u7684 Markdown \u6587\u4EF6\u8DEF\u5F84\uFF08\u5982 "templates/suffix.md"\uFF09\uFF0C\u7559\u7A7A\u7981\u7528').addText((text) => text.setPlaceholder("templates/suffix.md").setValue(this.plugin.settings.suffixFilePath).onChange(async (value) => {
       this.plugin.settings.suffixFilePath = value.trim();
       await this.plugin.saveSettings();
+    }));
+    containerEl.createEl("h3", { text: "\u5BFC\u51FA\u8BBE\u7F6E" });
+    new import_obsidian.Setting(containerEl).setName("\u9ED8\u8BA4\u5BFC\u51FA\u8DEF\u5F84").setDesc("\u5BFC\u51FA\u6587\u4EF6\u7684\u9ED8\u8BA4\u4FDD\u5B58\u8DEF\u5F84\uFF0C\u7559\u7A7A\u5219\u4FDD\u5B58\u5728\u6E90\u6587\u4EF6\u6240\u5728\u76EE\u5F55").addText((text) => text.setPlaceholder("exports/").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
+      this.plugin.settings.defaultExportPath = value.trim();
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian.Setting(containerEl).setName("\u663E\u793A\u4FA7\u8FB9\u680F\u56FE\u6807").setDesc("\u5728\u5DE6\u4FA7\u8FB9\u680F\u663E\u793A MD Image Embed \u5BFC\u51FA\u6309\u94AE").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRibbonIcon).onChange(async (value) => {
+      this.plugin.settings.showRibbonIcon = value;
+      await this.plugin.saveSettings();
+      this.plugin.app.workspace.trigger("reload-plugins");
     }));
   }
 };
