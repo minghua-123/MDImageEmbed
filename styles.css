@@ -35,3 +35,9 @@
     gap: 8px;
     margin-top: 5px;
 }
+
+/* 导出文件名输入框样式 */
+.md-image-embed-filename-setting .setting-item-control .setting-input {
+    width: 100%;
+    min-width: 300px;
+}

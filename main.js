@@ -593,9 +593,14 @@ var ExportDialog = class extends import_obsidian.Modal {
       }
     }));
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u6587\u4EF6\u540D" });
-    new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").addText((text) => text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
-      this.exportName = value;
-    }));
+    new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").setClass("md-image-embed-filename-setting").addText((text) => {
+      const inputEl = text.inputEl;
+      inputEl.style.width = "100%";
+      inputEl.style.minWidth = "300px";
+      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
+        this.exportName = value;
+      });
+    });
     const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
     buttonContainer.style.display = "flex";
     buttonContainer.style.justifyContent = "flex-end";

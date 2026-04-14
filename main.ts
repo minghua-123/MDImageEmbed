@@ -831,12 +831,19 @@ class ExportDialog extends Modal {
 		new Setting(contentEl)
 			.setName('文件名')
 			.setDesc('设置导出文件的名称')
-			.addText(text => text
-				.setPlaceholder('输入文件名')
-				.setValue(this.exportName)
-				.onChange(value => {
-					this.exportName = value;
-				}));
+			.setClass('md-image-embed-filename-setting')
+			.addText(text => {
+				const inputEl = text.inputEl;
+				// 优化输入框大小
+				inputEl.style.width = '100%';
+				inputEl.style.minWidth = '300px';
+				text
+					.setPlaceholder('输入文件名')
+					.setValue(this.exportName)
+					.onChange(value => {
+						this.exportName = value;
+					});
+			});
 
 		// 按钮区域
 		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
