@@ -2,10 +2,10 @@
  * MDImageEmbed - Obsidian Plugin
  * Convert local images in Markdown to Base64 embedded format
  *
- * @author mengzhishanghun
+ * @author minghua-123
  * @license MIT
  */
-import { Plugin, TFile, Notice, Menu, PluginSettingTab, App, Setting } from 'obsidian';
+import { Plugin, TFile, Notice, Menu, PluginSettingTab, App, Setting, Modal, ButtonComponent, TextComponent } from 'obsidian';
 
 // ========== 设置接口 ==========
 interface MDImageEmbedSettings {
@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS: MDImageEmbedSettings = {
 // ========== 主插件类 ==========
 export default class MDImageEmbedPlugin extends Plugin {
 	settings: MDImageEmbedSettings;
+	ribbonIconEl: HTMLElement | null = null;
 
 	// ========== 插件生命周期 ==========
 	async onload() {
@@ -50,18 +51,32 @@ export default class MDImageEmbedPlugin extends Plugin {
 			})
 		);
 
-		// 注册侧边栏图标
-		this.addRibbonIcon('download', 'MD Image Embed 导出', async () => {
-			// 获取当前活动文件
-			const activeFile = this.app.workspace.getActiveFile();
-			if (activeFile instanceof TFile && activeFile.extension === 'md') {
-				await this.exportAsBase64(activeFile);
-			} else {
-				new Notice('请先打开一个 Markdown 文件');
-			}
-		});
+		// 注册侧边栏图标（根据设置）
+		this.updateRibbonIcon();
 
 		console.log('MD Image Embed plugin loaded');
+	}
+
+	// ========== 更新侧边栏图标 ==========
+	updateRibbonIcon() {
+		// 先移除现有的侧边栏图标
+		if (this.ribbonIconEl) {
+			this.ribbonIconEl.remove();
+			this.ribbonIconEl = null;
+		}
+
+		// 根据设置添加侧边栏图标
+		if (this.settings.showRibbonIcon) {
+			this.ribbonIconEl = this.addRibbonIcon('download', 'MD Image Embed 导出', async () => {
+				// 获取当前活动文件
+				const activeFile = this.app.workspace.getActiveFile();
+				if (activeFile instanceof TFile && activeFile.extension === 'md') {
+					await this.showExportDialog(activeFile);
+				} else {
+					new Notice('请先打开一个 Markdown 文件');
+				}
+			});
+		}
 	}
 
 	onunload() {
@@ -95,7 +110,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 				.setTitle('导出为 Base64 格式')
 				.setIcon('download')
 				.onClick(async () => {
-					await this.exportAsBase64(file);
+					await this.showExportDialog(file);
 				});
 		});
 	}
@@ -163,8 +178,15 @@ export default class MDImageEmbedPlugin extends Plugin {
 		}
 	}
 
+	// ========== 显示导出设置对话框 ==========
+	async showExportDialog(file: TFile) {
+		// 创建对话框
+		const modal = new ExportDialog(this.app, this, file);
+		modal.open();
+	}
+
 	// ========== 功能 2: 导出为文件 ==========
-	async exportAsBase64(file: TFile) {
+	async exportAsBase64(file: TFile, exportPath?: string, exportName?: string) {
 		try {
 			let content = await this.app.vault.read(file);
 
@@ -183,11 +205,14 @@ export default class MDImageEmbedPlugin extends Plugin {
 			const result = await this.convertMarkdownToBase64(content, file);
 
 			// 生成导出文件路径
-			const exportFileName = file.name.replace('.md', '_base64.md');
+			const exportFileName = exportName || file.name.replace('.md', '_base64.md');
 			let exportFilePath;
 			
-			// 检查是否设置了默认导出路径
-			if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== '') {
+			// 检查是否指定了导出路径
+			if (exportPath && exportPath.trim() !== '') {
+				// 使用指定的导出路径
+				exportFilePath = `${exportPath.trim()}/${exportFileName}`;
+			} else if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== '') {
 				// 使用默认导出路径
 				exportFilePath = `${this.settings.defaultExportPath.trim()}/${exportFileName}`;
 			} else {
@@ -635,5 +660,95 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 					this.plugin.app.workspace.trigger('reload-plugins');
 				}));
 
+	}
+}
+
+// ========== 导出设置对话框 ==========
+class ExportDialog extends Modal {
+	plugin: MDImageEmbedPlugin;
+	file: TFile;
+	exportPath: string;
+	exportName: string;
+
+	constructor(app: App, plugin: MDImageEmbedPlugin, file: TFile) {
+		super(app);
+		this.plugin = plugin;
+		this.file = file;
+		// 设置默认值
+		this.exportPath = plugin.settings.defaultExportPath || (file.parent ? file.parent.path : '');
+		this.exportName = file.name.replace('.md', '_base64.md');
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		// 设置对话框标题
+		contentEl.createEl('h2', { text: '导出设置' });
+
+		// 导出路径设置
+		contentEl.createEl('h3', { text: '导出路径' });
+		const pathSetting = new Setting(contentEl)
+			.setName('导出文件夹')
+			.setDesc('选择导出文件的保存位置');
+
+		// 添加文件夹选择器
+		let pathInputEl: HTMLInputElement;
+		pathSetting.addText(text => {
+			pathInputEl = text.inputEl;
+			text
+				.setPlaceholder('输入文件夹路径')
+				.setValue(this.exportPath)
+				.onChange(value => {
+					this.exportPath = value;
+				});
+		});
+
+		// 添加文件夹选择按钮
+		pathSetting.addButton(button => button
+			.setButtonText('浏览')
+			.onClick(() => {
+				// 由于Obsidian API限制，这里我们暂时只支持手动输入路径
+				new Notice('请手动输入文件夹路径');
+			}));
+
+		// 导出文件名设置
+		contentEl.createEl('h3', { text: '导出文件名' });
+		new Setting(contentEl)
+			.setName('文件名')
+			.setDesc('设置导出文件的名称')
+			.addText(text => text
+				.setPlaceholder('输入文件名')
+				.setValue(this.exportName)
+				.onChange(value => {
+					this.exportName = value;
+				}));
+
+		// 按钮区域
+		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+		buttonContainer.style.display = 'flex';
+		buttonContainer.style.justifyContent = 'flex-end';
+		buttonContainer.style.gap = '10px';
+
+		// 取消按钮
+		new ButtonComponent(buttonContainer)
+			.setButtonText('取消')
+			.onClick(() => {
+				this.close();
+			});
+
+		// 导出按钮
+		new ButtonComponent(buttonContainer)
+			.setButtonText('导出')
+			.setCta()
+			.onClick(async () => {
+				// 执行导出
+				await this.plugin.exportAsBase64(this.file, this.exportPath, this.exportName);
+				this.close();
+			});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }

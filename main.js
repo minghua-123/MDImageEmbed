@@ -39,6 +39,10 @@ var DEFAULT_SETTINGS = {
   showRibbonIcon: true
 };
 var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
+  constructor() {
+    super(...arguments);
+    this.ribbonIconEl = null;
+  }
   // ========== 插件生命周期 ==========
   async onload() {
     await this.loadSettings();
@@ -50,15 +54,25 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
       })
     );
-    this.addRibbonIcon("download", "MD Image Embed \u5BFC\u51FA", async () => {
-      const activeFile = this.app.workspace.getActiveFile();
-      if (activeFile instanceof import_obsidian.TFile && activeFile.extension === "md") {
-        await this.exportAsBase64(activeFile);
-      } else {
-        new import_obsidian.Notice("\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A Markdown \u6587\u4EF6");
-      }
-    });
+    this.updateRibbonIcon();
     console.log("MD Image Embed plugin loaded");
+  }
+  // ========== 更新侧边栏图标 ==========
+  updateRibbonIcon() {
+    if (this.ribbonIconEl) {
+      this.ribbonIconEl.remove();
+      this.ribbonIconEl = null;
+    }
+    if (this.settings.showRibbonIcon) {
+      this.ribbonIconEl = this.addRibbonIcon("download", "MD Image Embed \u5BFC\u51FA", async () => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile instanceof import_obsidian.TFile && activeFile.extension === "md") {
+          await this.showExportDialog(activeFile);
+        } else {
+          new import_obsidian.Notice("\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A Markdown \u6587\u4EF6");
+        }
+      });
+    }
   }
   onunload() {
     console.log("MD Image Embed plugin unloaded");
@@ -79,7 +93,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
     });
     menu.addItem((item) => {
       item.setTitle("\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F").setIcon("download").onClick(async () => {
-        await this.exportAsBase64(file);
+        await this.showExportDialog(file);
       });
     });
   }
@@ -133,8 +147,13 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       console.error("Copy failed:", error);
     }
   }
+  // ========== 显示导出设置对话框 ==========
+  async showExportDialog(file) {
+    const modal = new ExportDialog(this.app, this, file);
+    modal.open();
+  }
   // ========== 功能 2: 导出为文件 ==========
-  async exportAsBase64(file) {
+  async exportAsBase64(file, exportPath, exportName) {
     try {
       let content = await this.app.vault.read(file);
       const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
@@ -146,9 +165,11 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         content = content + "\n\n" + suffix;
       }
       const result = await this.convertMarkdownToBase64(content, file);
-      const exportFileName = file.name.replace(".md", "_base64.md");
+      const exportFileName = exportName || file.name.replace(".md", "_base64.md");
       let exportFilePath;
-      if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== "") {
+      if (exportPath && exportPath.trim() !== "") {
+        exportFilePath = `${exportPath.trim()}/${exportFileName}`;
+      } else if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== "") {
         exportFilePath = `${this.settings.defaultExportPath.trim()}/${exportFileName}`;
       } else {
         exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
@@ -466,10 +487,54 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
     }));
   }
 };
+var ExportDialog = class extends import_obsidian.Modal {
+  constructor(app, plugin, file) {
+    super(app);
+    this.plugin = plugin;
+    this.file = file;
+    this.exportPath = plugin.settings.defaultExportPath || (file.parent ? file.parent.path : "");
+    this.exportName = file.name.replace(".md", "_base64.md");
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "\u5BFC\u51FA\u8BBE\u7F6E" });
+    contentEl.createEl("h3", { text: "\u5BFC\u51FA\u8DEF\u5F84" });
+    const pathSetting = new import_obsidian.Setting(contentEl).setName("\u5BFC\u51FA\u6587\u4EF6\u5939").setDesc("\u9009\u62E9\u5BFC\u51FA\u6587\u4EF6\u7684\u4FDD\u5B58\u4F4D\u7F6E");
+    let pathInputEl;
+    pathSetting.addText((text) => {
+      pathInputEl = text.inputEl;
+      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84").setValue(this.exportPath).onChange((value) => {
+        this.exportPath = value;
+      });
+    });
+    pathSetting.addButton((button) => button.setButtonText("\u6D4F\u89C8").onClick(() => {
+      new import_obsidian.Notice("\u8BF7\u624B\u52A8\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84");
+    }));
+    contentEl.createEl("h3", { text: "\u5BFC\u51FA\u6587\u4EF6\u540D" });
+    new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").addText((text) => text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
+      this.exportName = value;
+    }));
+    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "flex-end";
+    buttonContainer.style.gap = "10px";
+    new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u53D6\u6D88").onClick(() => {
+      this.close();
+    });
+    new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u5BFC\u51FA").setCta().onClick(async () => {
+      await this.plugin.exportAsBase64(this.file, this.exportPath, this.exportName);
+      this.close();
+    });
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
 /**
  * MDImageEmbed - Obsidian Plugin
  * Convert local images in Markdown to Base64 embedded format
  *
- * @author mengzhishanghun
+ * @author minghua-123
  * @license MIT
  */
