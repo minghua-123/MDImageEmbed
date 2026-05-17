@@ -31,6 +31,7 @@ var import_obsidian = require("obsidian");
 var { remote } = require("electron");
 var { dialog } = remote;
 var path = require("path");
+var fs = require("fs");
 var DEFAULT_SETTINGS = {
   showConversionLog: false,
   showDetailedLog: false,
@@ -174,11 +175,16 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       } else {
         exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
       }
-      const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
-      if (existingFile instanceof import_obsidian.TFile) {
-        await this.app.vault.modify(existingFile, result.content);
+      const isExternalPath = this.isExternalPath(exportFilePath);
+      if (isExternalPath) {
+        await this.writeToExternalPath(exportFilePath, result.content);
       } else {
-        await this.app.vault.create(exportFilePath, result.content);
+        const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
+        if (existingFile instanceof import_obsidian.TFile) {
+          await this.app.vault.modify(existingFile, result.content);
+        } else {
+          await this.app.vault.create(exportFilePath, result.content);
+        }
       }
       if (this.settings.showConversionLog) {
         let message = "\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6\n";
@@ -194,6 +200,39 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("\u274C \u5BFC\u51FA\u5931\u8D25: " + error.message);
       console.error("Export failed:", error);
     }
+  }
+  // ========== 检测是否为外部路径 ==========
+  isExternalPath(filePath) {
+    if (/^[A-Za-z]:[\\\/]/.test(filePath)) {
+      return true;
+    }
+    if (filePath.startsWith("/") && !filePath.startsWith("//")) {
+      const vaultPath = this.app.vault.adapter.basePath;
+      if (vaultPath && filePath.startsWith(vaultPath)) {
+        return false;
+      }
+      return true;
+    }
+    if (filePath.startsWith("\\\\")) {
+      return true;
+    }
+    return false;
+  }
+  // ========== 写入外部路径文件 ==========
+  async writeToExternalPath(filePath, content) {
+    return new Promise((resolve, reject) => {
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFile(filePath, content, "utf-8", (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
   }
   // ========== 公共方法: 格式化结果详情 ==========
   formatResultDetails(result) {
@@ -573,15 +612,9 @@ var ExportDialog = class extends import_obsidian.Modal {
         });
         if (!result.canceled && result.filePaths.length > 0) {
           const selectedPath = result.filePaths[0];
-          const relativePath = path.relative(vaultPath, selectedPath);
-          if (relativePath.startsWith("..")) {
-            new import_obsidian.Notice("\u8BF7\u9009\u62E9Vault\u5185\u7684\u6587\u4EF6\u5939");
-          } else {
-            const vaultPathFormatted = relativePath.replace(/\\/g, "/") || "/";
-            this.exportPath = vaultPathFormatted;
-            if (pathInputEl) {
-              pathInputEl.value = vaultPathFormatted;
-            }
+          this.exportPath = selectedPath.replace(/\\/g, "/");
+          if (pathInputEl) {
+            pathInputEl.value = this.exportPath;
           }
         }
       } catch (error) {

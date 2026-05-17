@@ -11,6 +11,7 @@ import { Plugin, TFile, TFolder, Notice, Menu, PluginSettingTab, App, Setting, M
 const { remote } = require('electron');
 const { dialog } = remote;
 const path = require('path');
+const fs = require('fs');
 
 // ========== 设置接口 ==========
 interface MDImageEmbedSettings {
@@ -200,7 +201,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 
 			const exportFileName = exportName || file.name.replace(/\.md$/, '_base64.md');
 			let exportFilePath;
-			
+
 			if (exportPath && exportPath.trim() !== '') {
 				exportFilePath = `${exportPath.trim()}/${exportFileName}`;
 			} else if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== '') {
@@ -209,11 +210,20 @@ export default class MDImageEmbedPlugin extends Plugin {
 				exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
 			}
 
-			const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
-			if (existingFile instanceof TFile) {
-				await this.app.vault.modify(existingFile, result.content);
+			// 检测是否为外部路径（绝对路径或包含驱动器号）
+			const isExternalPath = this.isExternalPath(exportFilePath);
+
+			if (isExternalPath) {
+				// 外部路径：使用 Node.js fs 模块写入
+				await this.writeToExternalPath(exportFilePath, result.content);
 			} else {
-				await this.app.vault.create(exportFilePath, result.content);
+				// Vault 内部路径：使用 Vault API
+				const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
+				if (existingFile instanceof TFile) {
+					await this.app.vault.modify(existingFile, result.content);
+				} else {
+					await this.app.vault.create(exportFilePath, result.content);
+				}
 			}
 
 			if (this.settings.showConversionLog) {
@@ -228,6 +238,47 @@ export default class MDImageEmbedPlugin extends Plugin {
 			new Notice('❌ 导出失败: ' + error.message);
 			console.error('Export failed:', error);
 		}
+	}
+
+	// ========== 检测是否为外部路径 ==========
+	isExternalPath(filePath: string): boolean {
+		// Windows: 包含驱动器号（如 C:\ 或 D:/）
+		if (/^[A-Za-z]:[\\\/]/.test(filePath)) {
+			return true;
+		}
+		// Unix/Mac: 以 / 开头的绝对路径
+		if (filePath.startsWith('/') && !filePath.startsWith('//')) {
+			// 检查是否是 Vault 内部的绝对路径（Obsidian 可能使用这种格式）
+			const vaultPath = (this.app.vault.adapter as any).basePath;
+			if (vaultPath && filePath.startsWith(vaultPath)) {
+				return false;
+			}
+			return true;
+		}
+		// 网络路径（如 \\server\share）
+		if (filePath.startsWith('\\\\')) {
+			return true;
+		}
+		return false;
+	}
+
+	// ========== 写入外部路径文件 ==========
+	async writeToExternalPath(filePath: string, content: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// 确保目录存在
+			const dir = path.dirname(filePath);
+			if (!fs.existsSync(dir)) {
+				fs.mkdirSync(dir, { recursive: true });
+			}
+
+			fs.writeFile(filePath, content, 'utf-8', (err: Error | null) => {
+				if (err) {
+					reject(err);
+				} else {
+					resolve();
+				}
+			});
+		});
 	}
 
 	// ========== 公共方法: 格式化结果详情 ==========
@@ -608,7 +659,7 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		const defaultPathSetting = new Setting(containerEl)
 			.setName('默认导出路径')
 			.setDesc('导出文件的默认保存路径，留空则保存在源文件所在目录');
-		
+
 		let defaultPathInputEl: HTMLInputElement;
 		defaultPathSetting.addText(text => {
 			defaultPathInputEl = text.inputEl;
@@ -645,7 +696,7 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 				try {
 					// 获取Vault的基础路径
 					const vaultPath = (this.app.vault.adapter as any).basePath;
-					
+
 					// 调用系统文件夹选择对话框
 					const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
 						title: '选择默认导出文件夹',
@@ -655,7 +706,7 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 
 					if (!result.canceled && result.filePaths.length > 0) {
 						const selectedPath = result.filePaths[0];
-						
+
 						// 转换为Vault相对路径
 						const relativePath = path.relative(vaultPath, selectedPath);
 						if (relativePath.startsWith('..')) {
@@ -756,9 +807,9 @@ class ExportDialog extends Modal {
 			.setButtonText('系统浏览')
 			.onClick(async () => {
 				try {
-					// 获取Vault的基础路径
+					// 获取Vault的基础路径作为默认打开位置
 					const vaultPath = (this.app.vault.adapter as any).basePath;
-					
+
 					// 调用系统文件夹选择对话框
 					const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
 						title: '选择导出文件夹',
@@ -768,19 +819,11 @@ class ExportDialog extends Modal {
 
 					if (!result.canceled && result.filePaths.length > 0) {
 						const selectedPath = result.filePaths[0];
-						
-						// 转换为Vault相对路径
-						const relativePath = path.relative(vaultPath, selectedPath);
-						if (relativePath.startsWith('..')) {
-							// 如果选择的路径在Vault外部，显示警告
-							new Notice('请选择Vault内的文件夹');
-						} else {
-							// 转换为Vault路径格式
-							const vaultPathFormatted = relativePath.replace(/\\/g, '/') || '/';
-							this.exportPath = vaultPathFormatted;
-							if (pathInputEl) {
-								pathInputEl.value = vaultPathFormatted;
-							}
+
+						// 直接使用选择的绝对路径（支持外部路径）
+						this.exportPath = selectedPath.replace(/\\/g, '/');
+						if (pathInputEl) {
+							pathInputEl.value = this.exportPath;
 						}
 					}
 				} catch (error) {
