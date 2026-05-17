@@ -11,7 +11,6 @@ import { Plugin, TFile, TFolder, Notice, Menu, PluginSettingTab, App, Setting, M
 const { remote } = require('electron');
 const { dialog } = remote;
 const path = require('path');
-const fs = require('fs');
 
 // ========== 设置接口 ==========
 interface MDImageEmbedSettings {
@@ -153,28 +152,13 @@ export default class MDImageEmbedPlugin extends Plugin {
 	// ========== 功能 1: 复制到剪贴板 ==========
 	async copyAsBase64(file: TFile) {
 		try {
-			let content = await this.app.vault.read(file);
-
-			// 添加前缀内容
-			const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
-			if (prefix) {
-				content = prefix + '\n\n' + content;
-			}
-
-			// 添加后缀内容
-			const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
-			if (suffix) {
-				content = content + '\n\n' + suffix;
-			}
-
+			const content = await this.prepareContent(file);
 			const result = await this.convertMarkdownToBase64(content, file);
 
-			// 复制到剪贴板
 			await navigator.clipboard.writeText(result.content);
 
 			if (this.settings.showConversionLog) {
-				// 显示详细的处理结果
-				this.showDetailedResults(result);
+				this.showResultNotice(result, '已复制到剪贴板');
 			} else {
 				new Notice('✅ 已复制为 Base64 格式');
 			}
@@ -182,6 +166,23 @@ export default class MDImageEmbedPlugin extends Plugin {
 			new Notice('❌ 复制失败: ' + error.message);
 			console.error('Copy failed:', error);
 		}
+	}
+
+	// ========== 公共方法: 准备文件内容（读取 + 前缀后缀） ==========
+	async prepareContent(file: TFile): Promise<string> {
+		let content = await this.app.vault.read(file);
+
+		const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
+		if (prefix) {
+			content = prefix + '\n\n' + content;
+		}
+
+		const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
+		if (suffix) {
+			content = content + '\n\n' + suffix;
+		}
+
+		return content;
 	}
 
 	// ========== 显示导出设置对话框 ==========
@@ -194,78 +195,31 @@ export default class MDImageEmbedPlugin extends Plugin {
 	// ========== 功能 2: 导出为文件 ==========
 	async exportAsBase64(file: TFile, exportPath?: string, exportName?: string) {
 		try {
-			let content = await this.app.vault.read(file);
-
-			// 添加前缀内容
-			const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
-			if (prefix) {
-				content = prefix + '\n\n' + content;
-			}
-
-			// 添加后缀内容
-			const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
-			if (suffix) {
-				content = content + '\n\n' + suffix;
-			}
-
+			const content = await this.prepareContent(file);
 			const result = await this.convertMarkdownToBase64(content, file);
 
-			// 生成导出文件路径
-			const exportFileName = exportName || file.name.replace('.md', '_base64.md');
+			const exportFileName = exportName || file.name.replace(/\.md$/, '_base64.md');
 			let exportFilePath;
 			
-			// 检查是否指定了导出路径
 			if (exportPath && exportPath.trim() !== '') {
-				// 使用指定的导出路径
 				exportFilePath = `${exportPath.trim()}/${exportFileName}`;
 			} else if (this.settings.defaultExportPath && this.settings.defaultExportPath.trim() !== '') {
-				// 使用默认导出路径
 				exportFilePath = `${this.settings.defaultExportPath.trim()}/${exportFileName}`;
 			} else {
-				// 使用源文件所在目录
 				exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
 			}
 
-			// 写入文件
-			await this.app.vault.create(exportFilePath, result.content);
+			const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
+			if (existingFile instanceof TFile) {
+				await this.app.vault.modify(existingFile, result.content);
+			} else {
+				await this.app.vault.create(exportFilePath, result.content);
+			}
 
 			if (this.settings.showConversionLog) {
-				// 显示详细的处理结果
 				let message = '✅ 已导出为 Base64 格式文件\n';
 				message += `📁 导出路径: ${exportFilePath}\n\n`;
-				message += `📊 统计: ${result.convertedCount + result.skippedCount} 个图片\n`;
-				message += `   • 已转换: ${result.convertedCount}\n`;
-				message += `   • 已跳过: ${result.skippedCount}`;
-
-				// 如果启用了详细日志，显示每个图片的状态
-				if (this.settings.showDetailedLog) {
-					message += '\n\n';
-
-					// 显示每个图片的详细状态
-					const maxDisplay = 8; // 最多显示8个图片的详情
-					const detailsToShow = result.details.slice(0, maxDisplay);
-
-					for (const detail of detailsToShow) {
-						const fileName = detail.path.split('/').pop() || detail.path;
-						const shortName = fileName.length > 35 ? fileName.substring(0, 32) + '...' : fileName;
-
-						if (detail.status === 'success') {
-							message += `✓ ${shortName}\n`;
-						} else if (detail.status === 'failed') {
-							message += `✗ ${shortName}\n  → ${detail.reason}\n`;
-						} else if (detail.status === 'skipped') {
-							message += `⊘ ${shortName}\n  → ${detail.reason}\n`;
-						}
-					}
-
-					// 如果还有更多图片未显示
-					if (result.details.length > maxDisplay) {
-						const remaining = result.details.length - maxDisplay;
-						message += `\n... 还有 ${remaining} 个`;
-					}
-				}
-
-				// 显示时间更长的通知（8秒）
+				message += this.formatResultDetails(result);
 				new Notice(message, 8000);
 			} else {
 				new Notice(`✅ 已导出为 Base64 格式文件: ${exportFileName}`);
@@ -276,23 +230,16 @@ export default class MDImageEmbedPlugin extends Plugin {
 		}
 	}
 
-	// ========== 显示详细处理结果 ==========
-	showDetailedResults(result: { content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }) {
+	// ========== 公共方法: 格式化结果详情 ==========
+	formatResultDetails(result: { content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }): string {
 		const total = result.convertedCount + result.skippedCount;
-
-		// 主通知
-		let message = '✅ 已复制到剪贴板\n\n';
-
-		message += `📊 统计: ${total} 个图片\n`;
+		let message = `📊 统计: ${total} 个图片\n`;
 		message += `   • 已转换: ${result.convertedCount}\n`;
 		message += `   • 已跳过: ${result.skippedCount}`;
 
-		// 如果启用了详细日志，显示每个图片的状态
 		if (this.settings.showDetailedLog) {
 			message += '\n\n';
-
-			// 显示每个图片的详细状态
-			const maxDisplay = 8; // 最多显示8个图片的详情
+			const maxDisplay = 8;
 			const detailsToShow = result.details.slice(0, maxDisplay);
 
 			for (const detail of detailsToShow) {
@@ -308,27 +255,27 @@ export default class MDImageEmbedPlugin extends Plugin {
 				}
 			}
 
-			// 如果还有更多图片未显示
 			if (result.details.length > maxDisplay) {
 				const remaining = result.details.length - maxDisplay;
 				message += `\n... 还有 ${remaining} 个`;
 			}
 		}
 
-		// 显示控制台提示
-		message += `\n\n💡 控制台 (Ctrl+Shift+I) 查看完整详情`;
+		return message;
+	}
 
-		// 显示时间更长的通知（8秒）
+	// ========== 显示处理结果通知 ==========
+	showResultNotice(result: { content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }, header: string) {
+		let message = `✅ ${header}\n\n`;
+		message += this.formatResultDetails(result);
+		message += `\n\n💡 控制台 (Ctrl+Shift+I) 查看完整详情`;
 		new Notice(message, 8000);
 	}
 
 	// ========== 核心转换逻辑 ==========
 	async convertMarkdownToBase64(content: string, sourceFile: TFile): Promise<{ content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }> {
-		// 匹配 Markdown 图片语法: ![alt](path) 或 ![alt](<path>)
-		// 支持 Obsidian 的 ![[image.png]] 语法
 		const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]/gi;
 
-		let result = content;
 		let convertedCount = 0;
 		let skippedCount = 0;
 		const details: Array<{ path: string, status: string, reason?: string }> = [];
@@ -339,15 +286,22 @@ export default class MDImageEmbedPlugin extends Plugin {
 			console.log(`[MDImageEmbed] 开始处理文档，共找到 ${matches.length} 个图片`);
 		}
 
-		for (const match of matches) {
-			const fullMatch = match[0];
+		let progressNotice: Notice | null = null;
+		if (matches.length > 5) {
+			progressNotice = new Notice('正在处理图片... 0/' + matches.length, 0);
+		}
 
-			// 处理标准 Markdown 语法: ![alt](path)
+		const replacements: Array<{ index: number, length: number, replacement: string }> = [];
+
+		for (let i = 0; i < matches.length; i++) {
+			const match = matches[i];
+			const fullMatch = match[0];
+			const matchIndex = match.index!;
+
 			if (match[1] !== undefined) {
 				const altText = match[1];
 				const imagePath = match[2];
 
-				// 跳过已经是 base64 的图片
 				if (this.settings.skipBase64Images && imagePath.startsWith('data:image')) {
 					skippedCount++;
 					const displayPath = imagePath.substring(0, 30) + '...';
@@ -358,7 +312,6 @@ export default class MDImageEmbedPlugin extends Plugin {
 					continue;
 				}
 
-				// 跳过网络图片（不支持）
 				if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
 					skippedCount++;
 					details.push({ path: imagePath, status: 'skipped', reason: '网络图片（不支持）' });
@@ -368,10 +321,9 @@ export default class MDImageEmbedPlugin extends Plugin {
 					continue;
 				}
 
-				// 转换本地图片
 				const base64 = await this.imageToBase64(imagePath, sourceFile);
 				if (base64) {
-					result = result.replace(fullMatch, `![${altText}](${base64})`);
+					replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${altText}](${base64})` });
 					convertedCount++;
 					details.push({ path: imagePath, status: 'success' });
 					if (this.settings.showConversionLog) {
@@ -384,13 +336,10 @@ export default class MDImageEmbedPlugin extends Plugin {
 						console.log(`[失败] ${imagePath} - 原因: 文件未找到或读取失败`);
 					}
 				}
-			}
-			// 处理 Obsidian Wiki 语法: ![[image.png]]
-			else if (match[3] !== undefined) {
+			} else if (match[3] !== undefined) {
 				const imageName = match[3];
 				const displayPath = `![[${imageName}]]`;
 
-				// 如果不转换 Wiki 链接，跳过
 				if (!this.settings.convertWikiLinks) {
 					skippedCount++;
 					details.push({ path: displayPath, status: 'skipped', reason: 'Wiki 链接转换已禁用' });
@@ -400,11 +349,9 @@ export default class MDImageEmbedPlugin extends Plugin {
 					continue;
 				}
 
-				// 转换为 base64
 				const base64 = await this.imageToBase64(imageName, sourceFile);
 				if (base64) {
-					// 转换为标准 Markdown 语法
-					result = result.replace(fullMatch, `![${imageName}](${base64})`);
+					replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${imageName}](${base64})` });
 					convertedCount++;
 					details.push({ path: displayPath, status: 'success' });
 					if (this.settings.showConversionLog) {
@@ -418,6 +365,20 @@ export default class MDImageEmbedPlugin extends Plugin {
 					}
 				}
 			}
+
+			if (progressNotice) {
+				progressNotice.setMessage(`正在处理图片... ${i + 1}/${matches.length}`);
+			}
+		}
+
+		if (progressNotice) {
+			progressNotice.hide();
+		}
+
+		let result = content;
+		for (let i = replacements.length - 1; i >= 0; i--) {
+			const r = replacements[i];
+			result = result.substring(0, r.index) + r.replacement + result.substring(r.index + r.length);
 		}
 
 		if (this.settings.showConversionLog) {
@@ -526,11 +487,13 @@ export default class MDImageEmbedPlugin extends Plugin {
 	// ========== ArrayBuffer 转 Base64 ==========
 	arrayBufferToBase64(buffer: ArrayBuffer): string {
 		const bytes = new Uint8Array(buffer);
-		let binary = '';
-		for (let i = 0; i < bytes.length; i++) {
-			binary += String.fromCharCode(bytes[i]);
+		const chunkSize = 8192;
+		const chunks: string[] = [];
+		for (let i = 0; i < bytes.length; i += chunkSize) {
+			const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+			chunks.push(String.fromCharCode.apply(null, chunk));
 		}
-		return btoa(binary);
+		return btoa(chunks.join(''));
 	}
 
 	// ========== 获取 MIME 类型 ==========
@@ -743,7 +706,7 @@ class ExportDialog extends Modal {
 		this.file = file;
 		// 设置默认值
 		this.exportPath = plugin.settings.defaultExportPath || (file.parent ? file.parent.path : '');
-		this.exportName = file.name.replace('.md', '_base64.md');
+		this.exportName = file.name.replace(/\.md$/, '_base64.md');
 	}
 
 	onOpen() {
@@ -828,20 +791,21 @@ class ExportDialog extends Modal {
 
 		// 导出文件名设置
 		contentEl.createEl('h3', { text: '导出文件名' });
+		let nameInputEl: HTMLInputElement;
 		new Setting(contentEl)
 			.setName('文件名')
 			.setDesc('设置导出文件的名称')
 			.setClass('md-image-embed-filename-setting')
 			.addText(text => {
-				const inputEl = text.inputEl;
-				// 优化输入框大小
-				inputEl.style.width = '100%';
-				inputEl.style.minWidth = '300px';
+				nameInputEl = text.inputEl;
+				nameInputEl.style.width = '100%';
+				nameInputEl.style.minWidth = '300px';
 				text
 					.setPlaceholder('输入文件名')
 					.setValue(this.exportName)
 					.onChange(value => {
 						this.exportName = value;
+						exportBtn.setDisabled(!value.trim());
 					});
 			});
 
@@ -851,19 +815,21 @@ class ExportDialog extends Modal {
 		buttonContainer.style.justifyContent = 'flex-end';
 		buttonContainer.style.gap = '10px';
 
-		// 取消按钮
 		new ButtonComponent(buttonContainer)
 			.setButtonText('取消')
 			.onClick(() => {
 				this.close();
 			});
 
-		// 导出按钮
-		new ButtonComponent(buttonContainer)
+		const exportBtn = new ButtonComponent(buttonContainer)
 			.setButtonText('导出')
 			.setCta()
+			.setDisabled(!this.exportName.trim())
 			.onClick(async () => {
-				// 执行导出
+				if (!this.exportName.trim()) {
+					new Notice('请输入导出文件名');
+					return;
+				}
 				await this.plugin.exportAsBase64(this.file, this.exportPath, this.exportName);
 				this.close();
 			});

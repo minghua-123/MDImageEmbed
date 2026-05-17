@@ -31,7 +31,6 @@ var import_obsidian = require("obsidian");
 var { remote } = require("electron");
 var { dialog } = remote;
 var path = require("path");
-var fs = require("fs");
 var DEFAULT_SETTINGS = {
   showConversionLog: false,
   showDetailedLog: false,
@@ -130,19 +129,11 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 功能 1: 复制到剪贴板 ==========
   async copyAsBase64(file) {
     try {
-      let content = await this.app.vault.read(file);
-      const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
-      if (prefix) {
-        content = prefix + "\n\n" + content;
-      }
-      const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
-      if (suffix) {
-        content = content + "\n\n" + suffix;
-      }
+      const content = await this.prepareContent(file);
       const result = await this.convertMarkdownToBase64(content, file);
       await navigator.clipboard.writeText(result.content);
       if (this.settings.showConversionLog) {
-        this.showDetailedResults(result);
+        this.showResultNotice(result, "\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F");
       } else {
         new import_obsidian.Notice("\u2705 \u5DF2\u590D\u5236\u4E3A Base64 \u683C\u5F0F");
       }
@@ -150,6 +141,19 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("\u274C \u590D\u5236\u5931\u8D25: " + error.message);
       console.error("Copy failed:", error);
     }
+  }
+  // ========== 公共方法: 准备文件内容（读取 + 前缀后缀） ==========
+  async prepareContent(file) {
+    let content = await this.app.vault.read(file);
+    const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
+    if (prefix) {
+      content = prefix + "\n\n" + content;
+    }
+    const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
+    if (suffix) {
+      content = content + "\n\n" + suffix;
+    }
+    return content;
   }
   // ========== 显示导出设置对话框 ==========
   async showExportDialog(file) {
@@ -159,17 +163,9 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 功能 2: 导出为文件 ==========
   async exportAsBase64(file, exportPath, exportName) {
     try {
-      let content = await this.app.vault.read(file);
-      const prefix = await this.readTemplateFile(this.settings.prefixFilePath);
-      if (prefix) {
-        content = prefix + "\n\n" + content;
-      }
-      const suffix = await this.readTemplateFile(this.settings.suffixFilePath);
-      if (suffix) {
-        content = content + "\n\n" + suffix;
-      }
+      const content = await this.prepareContent(file);
       const result = await this.convertMarkdownToBase64(content, file);
-      const exportFileName = exportName || file.name.replace(".md", "_base64.md");
+      const exportFileName = exportName || file.name.replace(/\.md$/, "_base64.md");
       let exportFilePath;
       if (exportPath && exportPath.trim() !== "") {
         exportFilePath = `${exportPath.trim()}/${exportFileName}`;
@@ -178,43 +174,18 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       } else {
         exportFilePath = file.parent ? `${file.parent.path}/${exportFileName}` : exportFileName;
       }
-      await this.app.vault.create(exportFilePath, result.content);
+      const existingFile = this.app.vault.getAbstractFileByPath(exportFilePath);
+      if (existingFile instanceof import_obsidian.TFile) {
+        await this.app.vault.modify(existingFile, result.content);
+      } else {
+        await this.app.vault.create(exportFilePath, result.content);
+      }
       if (this.settings.showConversionLog) {
         let message = "\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6\n";
         message += `\u{1F4C1} \u5BFC\u51FA\u8DEF\u5F84: ${exportFilePath}
 
 `;
-        message += `\u{1F4CA} \u7EDF\u8BA1: ${result.convertedCount + result.skippedCount} \u4E2A\u56FE\u7247
-`;
-        message += `   \u2022 \u5DF2\u8F6C\u6362: ${result.convertedCount}
-`;
-        message += `   \u2022 \u5DF2\u8DF3\u8FC7: ${result.skippedCount}`;
-        if (this.settings.showDetailedLog) {
-          message += "\n\n";
-          const maxDisplay = 8;
-          const detailsToShow = result.details.slice(0, maxDisplay);
-          for (const detail of detailsToShow) {
-            const fileName = detail.path.split("/").pop() || detail.path;
-            const shortName = fileName.length > 35 ? fileName.substring(0, 32) + "..." : fileName;
-            if (detail.status === "success") {
-              message += `\u2713 ${shortName}
-`;
-            } else if (detail.status === "failed") {
-              message += `\u2717 ${shortName}
-  \u2192 ${detail.reason}
-`;
-            } else if (detail.status === "skipped") {
-              message += `\u2298 ${shortName}
-  \u2192 ${detail.reason}
-`;
-            }
-          }
-          if (result.details.length > maxDisplay) {
-            const remaining = result.details.length - maxDisplay;
-            message += `
-... \u8FD8\u6709 ${remaining} \u4E2A`;
-          }
-        }
+        message += this.formatResultDetails(result);
         new import_obsidian.Notice(message, 8e3);
       } else {
         new import_obsidian.Notice(`\u2705 \u5DF2\u5BFC\u51FA\u4E3A Base64 \u683C\u5F0F\u6587\u4EF6: ${exportFileName}`);
@@ -224,11 +195,10 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       console.error("Export failed:", error);
     }
   }
-  // ========== 显示详细处理结果 ==========
-  showDetailedResults(result) {
+  // ========== 公共方法: 格式化结果详情 ==========
+  formatResultDetails(result) {
     const total = result.convertedCount + result.skippedCount;
-    let message = "\u2705 \u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F\n\n";
-    message += `\u{1F4CA} \u7EDF\u8BA1: ${total} \u4E2A\u56FE\u7247
+    let message = `\u{1F4CA} \u7EDF\u8BA1: ${total} \u4E2A\u56FE\u7247
 `;
     message += `   \u2022 \u5DF2\u8F6C\u6362: ${result.convertedCount}
 `;
@@ -259,6 +229,14 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
 ... \u8FD8\u6709 ${remaining} \u4E2A`;
       }
     }
+    return message;
+  }
+  // ========== 显示处理结果通知 ==========
+  showResultNotice(result, header) {
+    let message = `\u2705 ${header}
+
+`;
+    message += this.formatResultDetails(result);
     message += `
 
 \u{1F4A1} \u63A7\u5236\u53F0 (Ctrl+Shift+I) \u67E5\u770B\u5B8C\u6574\u8BE6\u60C5`;
@@ -267,7 +245,6 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 核心转换逻辑 ==========
   async convertMarkdownToBase64(content, sourceFile) {
     const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]/gi;
-    let result = content;
     let convertedCount = 0;
     let skippedCount = 0;
     const details = [];
@@ -275,8 +252,15 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
     if (this.settings.showConversionLog) {
       console.log(`[MDImageEmbed] \u5F00\u59CB\u5904\u7406\u6587\u6863\uFF0C\u5171\u627E\u5230 ${matches.length} \u4E2A\u56FE\u7247`);
     }
-    for (const match of matches) {
+    let progressNotice = null;
+    if (matches.length > 5) {
+      progressNotice = new import_obsidian.Notice("\u6B63\u5728\u5904\u7406\u56FE\u7247... 0/" + matches.length, 0);
+    }
+    const replacements = [];
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
       const fullMatch = match[0];
+      const matchIndex = match.index;
       if (match[1] !== void 0) {
         const altText = match[1];
         const imagePath = match[2];
@@ -299,7 +283,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
         const base64 = await this.imageToBase64(imagePath, sourceFile);
         if (base64) {
-          result = result.replace(fullMatch, `![${altText}](${base64})`);
+          replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${altText}](${base64})` });
           convertedCount++;
           details.push({ path: imagePath, status: "success" });
           if (this.settings.showConversionLog) {
@@ -325,7 +309,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
         const base64 = await this.imageToBase64(imageName, sourceFile);
         if (base64) {
-          result = result.replace(fullMatch, `![${imageName}](${base64})`);
+          replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${imageName}](${base64})` });
           convertedCount++;
           details.push({ path: displayPath, status: "success" });
           if (this.settings.showConversionLog) {
@@ -339,6 +323,17 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
           }
         }
       }
+      if (progressNotice) {
+        progressNotice.setMessage(`\u6B63\u5728\u5904\u7406\u56FE\u7247... ${i + 1}/${matches.length}`);
+      }
+    }
+    if (progressNotice) {
+      progressNotice.hide();
+    }
+    let result = content;
+    for (let i = replacements.length - 1; i >= 0; i--) {
+      const r = replacements[i];
+      result = result.substring(0, r.index) + r.replacement + result.substring(r.index + r.length);
     }
     if (this.settings.showConversionLog) {
       console.log(`[MDImageEmbed] \u5904\u7406\u5B8C\u6210: ${convertedCount} \u4E2A\u6210\u529F, ${skippedCount} \u4E2A\u8DF3\u8FC7`);
@@ -422,11 +417,13 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== ArrayBuffer 转 Base64 ==========
   arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const chunkSize = 8192;
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      chunks.push(String.fromCharCode.apply(null, chunk));
     }
-    return btoa(binary);
+    return btoa(chunks.join(""));
   }
   // ========== 获取 MIME 类型 ==========
   getMimeType(extension) {
@@ -541,7 +538,7 @@ var ExportDialog = class extends import_obsidian.Modal {
     this.plugin = plugin;
     this.file = file;
     this.exportPath = plugin.settings.defaultExportPath || (file.parent ? file.parent.path : "");
-    this.exportName = file.name.replace(".md", "_base64.md");
+    this.exportName = file.name.replace(/\.md$/, "_base64.md");
   }
   onOpen() {
     const { contentEl } = this;
@@ -593,12 +590,14 @@ var ExportDialog = class extends import_obsidian.Modal {
       }
     }));
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u6587\u4EF6\u540D" });
+    let nameInputEl;
     new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").setClass("md-image-embed-filename-setting").addText((text) => {
-      const inputEl = text.inputEl;
-      inputEl.style.width = "100%";
-      inputEl.style.minWidth = "300px";
+      nameInputEl = text.inputEl;
+      nameInputEl.style.width = "100%";
+      nameInputEl.style.minWidth = "300px";
       text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
         this.exportName = value;
+        exportBtn.setDisabled(!value.trim());
       });
     });
     const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
@@ -608,7 +607,11 @@ var ExportDialog = class extends import_obsidian.Modal {
     new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u53D6\u6D88").onClick(() => {
       this.close();
     });
-    new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u5BFC\u51FA").setCta().onClick(async () => {
+    const exportBtn = new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u5BFC\u51FA").setCta().setDisabled(!this.exportName.trim()).onClick(async () => {
+      if (!this.exportName.trim()) {
+        new import_obsidian.Notice("\u8BF7\u8F93\u5165\u5BFC\u51FA\u6587\u4EF6\u540D");
+        return;
+      }
       await this.plugin.exportAsBase64(this.file, this.exportPath, this.exportName);
       this.close();
     });
