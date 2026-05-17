@@ -1,5 +1,5 @@
 /* MD Image Embed 插件样式 */
-/* 版本 2.6.1 - 导出对话框输入框自适应优化 */
+/* 版本 2.6.2 - 导出对话框输入框自适应优化（使用 !important 强制覆盖） */
 
 /* ========== CSS 变量系统 ========== */
 :root {
@@ -155,11 +155,13 @@
 
 /* ========== 路径设置样式 ========== */
 .md-image-embed-path-setting {
-    flex-wrap: wrap;
+    flex-wrap: wrap !important;
 }
 
 .md-image-embed-path-setting .setting-item-info {
-    flex-basis: 100%;
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
 }
 
 .md-image-embed-path-setting .setting-item-name {
@@ -180,15 +182,17 @@
 }
 
 .md-image-embed-path-setting .setting-item-control {
-    display: flex;
-    flex-direction: column;
-    flex-basis: 100%;
-    width: 100%;
+    display: flex !important;
+    flex-direction: column !important;
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
     gap: var(--mdie-spacing-md);
 }
 
 .md-image-embed-path-setting .setting-item-control .setting-input {
-    width: 100%;
+    width: 100% !important;
+    box-sizing: border-box !important;
     padding: var(--mdie-spacing-sm) var(--mdie-spacing-md);
     border: 1px solid var(--mdie-color-border);
     border-radius: var(--mdie-radius-md);
@@ -221,20 +225,24 @@
 
 /* ========== 文件名设置样式 ========== */
 .md-image-embed-filename-setting {
-    flex-wrap: wrap;
+    flex-wrap: wrap !important;
 }
 
 .md-image-embed-filename-setting .setting-item-info {
-    flex-basis: 100%;
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
 }
 
 .md-image-embed-filename-setting .setting-item-control {
-    flex-basis: 100%;
-    width: 100%;
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
 }
 
 .md-image-embed-filename-setting .setting-item-control .setting-input {
-    width: 100%;
+    width: 100% !important;
+    box-sizing: border-box !important;
     padding: var(--mdie-spacing-sm) var(--mdie-spacing-md);
     border: 1px solid var(--mdie-color-border);
     border-radius: var(--mdie-radius-md);
