@@ -486,6 +486,7 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.addClass("md-image-embed-settings");
     containerEl.createEl("h2", { text: "MD Image Embed \u8BBE\u7F6E" });
     new import_obsidian.Setting(containerEl).setName("\u663E\u793A\u8F6C\u6362\u65E5\u5FD7").setDesc("\u5728\u901A\u77E5\u4E2D\u663E\u793A\u8F6C\u6362\u6458\u8981\u4FE1\u606F").addToggle((toggle) => toggle.setValue(this.plugin.settings.showConversionLog).onChange(async (value) => {
       this.plugin.settings.showConversionLog = value;
@@ -520,8 +521,6 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
     let defaultPathInputEl;
     defaultPathSetting.addText((text) => {
       defaultPathInputEl = text.inputEl;
-      defaultPathInputEl.style.width = "100%";
-      defaultPathInputEl.style.minWidth = "300px";
       text.setPlaceholder("exports/").setValue(this.plugin.settings.defaultExportPath).onChange(async (value) => {
         this.plugin.settings.defaultExportPath = value.trim();
         await this.plugin.saveSettings();
@@ -581,15 +580,14 @@ var ExportDialog = class extends import_obsidian.Modal {
   }
   onOpen() {
     const { contentEl } = this;
+    contentEl.addClass("md-image-embed-export-dialog");
     contentEl.createEl("h2", { text: "\u5BFC\u51FA\u8BBE\u7F6E" });
     contentEl.createEl("h3", { text: "\u5BFC\u51FA\u8DEF\u5F84" });
     const pathSetting = new import_obsidian.Setting(contentEl).setName("\u5BFC\u51FA\u6587\u4EF6\u5939").setDesc("\u9009\u62E9\u5BFC\u51FA\u6587\u4EF6\u7684\u4FDD\u5B58\u4F4D\u7F6E").setClass("md-image-embed-path-setting");
     let pathInputEl;
     pathSetting.addText((text) => {
       pathInputEl = text.inputEl;
-      pathInputEl.style.width = "100%";
-      pathInputEl.style.minWidth = "300px";
-      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84").setValue(this.exportPath).onChange((value) => {
+      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u5939\u8DEF\u5F84...").setValue(this.exportPath).onChange((value) => {
         this.exportPath = value;
       });
     });
@@ -626,17 +624,12 @@ var ExportDialog = class extends import_obsidian.Modal {
     let nameInputEl;
     new import_obsidian.Setting(contentEl).setName("\u6587\u4EF6\u540D").setDesc("\u8BBE\u7F6E\u5BFC\u51FA\u6587\u4EF6\u7684\u540D\u79F0").setClass("md-image-embed-filename-setting").addText((text) => {
       nameInputEl = text.inputEl;
-      nameInputEl.style.width = "100%";
-      nameInputEl.style.minWidth = "300px";
-      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D").setValue(this.exportName).onChange((value) => {
+      text.setPlaceholder("\u8F93\u5165\u6587\u4EF6\u540D...").setValue(this.exportName).onChange((value) => {
         this.exportName = value;
         exportBtn.setDisabled(!value.trim());
       });
     });
-    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-    buttonContainer.style.display = "flex";
-    buttonContainer.style.justifyContent = "flex-end";
-    buttonContainer.style.gap = "10px";
+    const buttonContainer = contentEl.createDiv({ cls: "md-image-embed-button-container" });
     new import_obsidian.ButtonComponent(buttonContainer).setButtonText("\u53D6\u6D88").onClick(() => {
       this.close();
     });

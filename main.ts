@@ -575,6 +575,8 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.addClass('md-image-embed-settings');
+
 		containerEl.createEl('h2', { text: 'MD Image Embed 设置' });
 
 		// 设置 1: 显示转换日志
@@ -663,9 +665,6 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		let defaultPathInputEl: HTMLInputElement;
 		defaultPathSetting.addText(text => {
 			defaultPathInputEl = text.inputEl;
-			// 优化输入框大小
-			defaultPathInputEl.style.width = '100%';
-			defaultPathInputEl.style.minWidth = '300px';
 			text
 				.setPlaceholder('exports/')
 				.setValue(this.plugin.settings.defaultExportPath)
@@ -763,6 +762,8 @@ class ExportDialog extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 
+		contentEl.addClass('md-image-embed-export-dialog');
+
 		// 设置对话框标题
 		contentEl.createEl('h2', { text: '导出设置' });
 
@@ -777,11 +778,8 @@ class ExportDialog extends Modal {
 		let pathInputEl: HTMLInputElement;
 		pathSetting.addText(text => {
 			pathInputEl = text.inputEl;
-			// 优化输入框大小
-			pathInputEl.style.width = '100%';
-			pathInputEl.style.minWidth = '300px';
 			text
-				.setPlaceholder('输入文件夹路径')
+				.setPlaceholder('输入文件夹路径...')
 				.setValue(this.exportPath)
 				.onChange(value => {
 					this.exportPath = value;
@@ -841,10 +839,8 @@ class ExportDialog extends Modal {
 			.setClass('md-image-embed-filename-setting')
 			.addText(text => {
 				nameInputEl = text.inputEl;
-				nameInputEl.style.width = '100%';
-				nameInputEl.style.minWidth = '300px';
 				text
-					.setPlaceholder('输入文件名')
+					.setPlaceholder('输入文件名...')
 					.setValue(this.exportName)
 					.onChange(value => {
 						this.exportName = value;
@@ -853,10 +849,7 @@ class ExportDialog extends Modal {
 			});
 
 		// 按钮区域
-		const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-		buttonContainer.style.display = 'flex';
-		buttonContainer.style.justifyContent = 'flex-end';
-		buttonContainer.style.gap = '10px';
+		const buttonContainer = contentEl.createDiv({ cls: 'md-image-embed-button-container' });
 
 		new ButtonComponent(buttonContainer)
 			.setButtonText('取消')
