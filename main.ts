@@ -7,9 +7,21 @@
  */
 import { Plugin, TFile, TFolder, Notice, Menu, PluginSettingTab, App, Setting, Modal, ButtonComponent, TextComponent, SuggestModal } from 'obsidian';
 
-// 导入Electron模块（仅桌面端可用）
-const { remote } = require('electron');
-const { dialog } = remote;
+// ========== Electron 兼容层（仅桌面端可用）==========
+// electron.remote 已随 Electron 14+ 移除，新版 Obsidian 内置 @electron/remote；
+// 旧版 Obsidian 回退到 electron.remote；均不可用时置空，相关功能运行时降级提示
+const remote: any = (() => {
+	try {
+		return require('@electron/remote');
+	} catch {
+		try {
+			return require('electron').remote;
+		} catch {
+			return null;
+		}
+	}
+})();
+const dialog: any = remote ? remote.dialog : null;
 const path = require('path');
 const fs = require('fs');
 
@@ -284,7 +296,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 	// ========== 公共方法: 格式化结果详情 ==========
 	formatResultDetails(result: { content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }): string {
 		const total = result.convertedCount + result.skippedCount;
-		let message = `📊 统计: ${total} 个图片\n`;
+		let message = `📊 统计: ${total} 个媒体文件\n`;
 		message += `   • 已转换: ${result.convertedCount}\n`;
 		message += `   • 已跳过: ${result.skippedCount}`;
 
@@ -325,7 +337,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 
 	// ========== 核心转换逻辑 ==========
 	async convertMarkdownToBase64(content: string, sourceFile: TFile): Promise<{ content: string, convertedCount: number, skippedCount: number, details: Array<{ path: string, status: string, reason?: string }> }> {
-		const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]/gi;
+		const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp|mp4|webm|mov|avi|mkv))\]\]/gi;
 
 		let convertedCount = 0;
 		let skippedCount = 0;
@@ -334,12 +346,12 @@ export default class MDImageEmbedPlugin extends Plugin {
 		const matches = [...content.matchAll(imgRegex)];
 
 		if (this.settings.showConversionLog) {
-			console.log(`[MDImageEmbed] 开始处理文档，共找到 ${matches.length} 个图片`);
+			console.log(`[MDImageEmbed] 开始处理文档，共找到 ${matches.length} 个媒体引用`);
 		}
 
 		let progressNotice: Notice | null = null;
 		if (matches.length > 5) {
-			progressNotice = new Notice('正在处理图片... 0/' + matches.length, 0);
+			progressNotice = new Notice('正在处理媒体文件... 0/' + matches.length, 0);
 		}
 
 		const replacements: Array<{ index: number, length: number, replacement: string }> = [];
@@ -353,7 +365,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 				const altText = match[1];
 				const imagePath = match[2];
 
-				if (this.settings.skipBase64Images && imagePath.startsWith('data:image')) {
+				if (this.settings.skipBase64Images && /^data:(image|video)\//.test(imagePath)) {
 					skippedCount++;
 					const displayPath = imagePath.substring(0, 30) + '...';
 					details.push({ path: displayPath, status: 'skipped', reason: '已是 Base64 格式' });
@@ -365,16 +377,20 @@ export default class MDImageEmbedPlugin extends Plugin {
 
 				if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
 					skippedCount++;
-					details.push({ path: imagePath, status: 'skipped', reason: '网络图片（不支持）' });
+					details.push({ path: imagePath, status: 'skipped', reason: '网络媒体（不支持）' });
 					if (this.settings.showConversionLog) {
-						console.log(`[跳过] ${imagePath} - 原因: 网络图片不支持转换`);
+						console.log(`[跳过] ${imagePath} - 原因: 网络媒体不支持转换`);
 					}
 					continue;
 				}
 
-				const base64 = await this.imageToBase64(imagePath, sourceFile);
-				if (base64) {
-					replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${altText}](${base64})` });
+				const embedded = await this.mediaToBase64(imagePath, sourceFile);
+				if (embedded) {
+					// 视频必须用 <video> 标签嵌入（Markdown ![]() 语法渲染为 <img>，无法播放视频）
+					const replacement = embedded.isVideo
+						? `<video controls src="${embedded.dataUri}"></video>`
+						: `![${altText}](${embedded.dataUri})`;
+					replacements.push({ index: matchIndex, length: fullMatch.length, replacement });
 					convertedCount++;
 					details.push({ path: imagePath, status: 'success' });
 					if (this.settings.showConversionLog) {
@@ -400,9 +416,13 @@ export default class MDImageEmbedPlugin extends Plugin {
 					continue;
 				}
 
-				const base64 = await this.imageToBase64(imageName, sourceFile);
-				if (base64) {
-					replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${imageName}](${base64})` });
+				const embedded = await this.mediaToBase64(imageName, sourceFile);
+				if (embedded) {
+					// 视频必须用 <video> 标签嵌入（Markdown ![]() 语法渲染为 <img>，无法播放视频）
+					const replacement = embedded.isVideo
+						? `<video controls src="${embedded.dataUri}"></video>`
+						: `![${imageName}](${embedded.dataUri})`;
+					replacements.push({ index: matchIndex, length: fullMatch.length, replacement });
 					convertedCount++;
 					details.push({ path: displayPath, status: 'success' });
 					if (this.settings.showConversionLog) {
@@ -418,7 +438,7 @@ export default class MDImageEmbedPlugin extends Plugin {
 			}
 
 			if (progressNotice) {
-				progressNotice.setMessage(`正在处理图片... ${i + 1}/${matches.length}`);
+				progressNotice.setMessage(`正在处理媒体文件... ${i + 1}/${matches.length}`);
 			}
 		}
 
@@ -438,41 +458,42 @@ export default class MDImageEmbedPlugin extends Plugin {
 		return { content: result, convertedCount, skippedCount, details };
 	}
 
-	// ========== 图片转 Base64 ==========
-	async imageToBase64(imagePath: string, sourceFile: TFile): Promise<string | null> {
+	// ========== 媒体文件（图片/视频）转 Base64 ==========
+	async mediaToBase64(mediaPath: string, sourceFile: TFile): Promise<{ dataUri: string, isVideo: boolean } | null> {
 		try {
-			// 解析图片路径
-			const imageFile = this.resolveImagePath(imagePath, sourceFile);
-			if (!imageFile) {
+			// 解析媒体文件路径
+			const mediaFile = this.resolveImagePath(mediaPath, sourceFile);
+			if (!mediaFile) {
 				if (this.settings.showConversionLog) {
 					console.warn(`  └─ 路径解析失败: 在以下位置都未找到文件`);
-					console.warn(`     - Vault 根目录: ${imagePath}`);
+					console.warn(`     - Vault 根目录: ${mediaPath}`);
 					if (sourceFile.parent) {
-						console.warn(`     - 相对路径: ${sourceFile.parent.path}/${imagePath}`);
+						console.warn(`     - 相对路径: ${sourceFile.parent.path}/${mediaPath}`);
 					}
 				}
 				return null;
 			}
 
 			if (this.settings.showConversionLog) {
-				console.log(`  └─ 文件已找到: ${imageFile.path}`);
+				console.log(`  └─ 文件已找到: ${mediaFile.path}`);
 			}
 
-			// 读取图片为 ArrayBuffer
-			const arrayBuffer = await this.app.vault.readBinary(imageFile);
+			// 读取媒体文件为 ArrayBuffer
+			const arrayBuffer = await this.app.vault.readBinary(mediaFile);
 
 			// 转换为 Base64
 			const base64 = this.arrayBufferToBase64(arrayBuffer);
 
 			// 获取 MIME 类型
-			const mimeType = this.getMimeType(imageFile.extension);
+			const mimeType = this.getMimeType(mediaFile.extension);
+			const isVideo = this.isVideoFile(mediaFile.extension);
 
 			if (this.settings.showConversionLog) {
 				const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(2);
-				console.log(`  └─ 文件大小: ${sizeKB} KB, MIME: ${mimeType}`);
+				console.log(`  └─ 文件大小: ${sizeKB} KB, MIME: ${mimeType}, 类型: ${isVideo ? '视频' : '图片'}`);
 			}
 
-			return `data:${mimeType};base64,${base64}`;
+			return { dataUri: `data:${mimeType};base64,${base64}`, isVideo };
 		} catch (error) {
 			if (this.settings.showConversionLog) {
 				console.error(`  └─ 读取或转换失败: ${error.message}`);
@@ -550,15 +571,27 @@ export default class MDImageEmbedPlugin extends Plugin {
 	// ========== 获取 MIME 类型 ==========
 	getMimeType(extension: string): string {
 		const mimeTypes: Record<string, string> = {
+			// 图片
 			'png': 'image/png',
 			'jpg': 'image/jpeg',
 			'jpeg': 'image/jpeg',
 			'gif': 'image/gif',
 			'webp': 'image/webp',
 			'svg': 'image/svg+xml',
-			'bmp': 'image/bmp'
+			'bmp': 'image/bmp',
+			// 视频
+			'mp4': 'video/mp4',
+			'webm': 'video/webm',
+			'mov': 'video/quicktime',
+			'avi': 'video/x-msvideo',
+			'mkv': 'video/x-matroska'
 		};
-		return mimeTypes[extension.toLowerCase()] || 'image/png';
+		return mimeTypes[extension.toLowerCase()] || 'application/octet-stream';
+	}
+
+	// ========== 判断是否为视频文件 ==========
+	isVideoFile(extension: string): boolean {
+		return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(extension.toLowerCase());
 	}
 }
 
@@ -693,6 +726,10 @@ class MDImageEmbedSettingTab extends PluginSettingTab {
 		defaultPathSetting.addButton(button => button
 			.setButtonText('系统浏览')
 			.onClick(async () => {
+				if (!dialog || !remote) {
+					new Notice('当前 Obsidian 版本不支持系统对话框，请使用 "Vault内浏览" 或手动输入路径');
+					return;
+				}
 				try {
 					// 获取Vault的基础路径
 					const vaultPath = (this.app.vault.adapter as any).basePath;
@@ -806,6 +843,10 @@ class ExportDialog extends Modal {
 		pathSetting.addButton(button => button
 			.setButtonText('系统浏览')
 			.onClick(async () => {
+				if (!dialog || !remote) {
+					new Notice('当前 Obsidian 版本不支持系统对话框，请使用 "Vault内浏览" 或手动输入路径');
+					return;
+				}
 				try {
 					// 获取Vault的基础路径作为默认打开位置
 					const vaultPath = (this.app.vault.adapter as any).basePath;

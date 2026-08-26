@@ -28,8 +28,18 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
-var { remote } = require("electron");
-var { dialog } = remote;
+var remote = (() => {
+  try {
+    return require("@electron/remote");
+  } catch (e) {
+    try {
+      return require("electron").remote;
+    } catch (e2) {
+      return null;
+    }
+  }
+})();
+var dialog = remote ? remote.dialog : null;
 var path = require("path");
 var fs = require("fs");
 var DEFAULT_SETTINGS = {
@@ -237,7 +247,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 公共方法: 格式化结果详情 ==========
   formatResultDetails(result) {
     const total = result.convertedCount + result.skippedCount;
-    let message = `\u{1F4CA} \u7EDF\u8BA1: ${total} \u4E2A\u56FE\u7247
+    let message = `\u{1F4CA} \u7EDF\u8BA1: ${total} \u4E2A\u5A92\u4F53\u6587\u4EF6
 `;
     message += `   \u2022 \u5DF2\u8F6C\u6362: ${result.convertedCount}
 `;
@@ -283,17 +293,17 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   }
   // ========== 核心转换逻辑 ==========
   async convertMarkdownToBase64(content, sourceFile) {
-    const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp))\]\]/gi;
+    const imgRegex = /!\[([^\]]*)\]\(<?([^)">]+)>?\)|!\[\[([^\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp|mp4|webm|mov|avi|mkv))\]\]/gi;
     let convertedCount = 0;
     let skippedCount = 0;
     const details = [];
     const matches = [...content.matchAll(imgRegex)];
     if (this.settings.showConversionLog) {
-      console.log(`[MDImageEmbed] \u5F00\u59CB\u5904\u7406\u6587\u6863\uFF0C\u5171\u627E\u5230 ${matches.length} \u4E2A\u56FE\u7247`);
+      console.log(`[MDImageEmbed] \u5F00\u59CB\u5904\u7406\u6587\u6863\uFF0C\u5171\u627E\u5230 ${matches.length} \u4E2A\u5A92\u4F53\u5F15\u7528`);
     }
     let progressNotice = null;
     if (matches.length > 5) {
-      progressNotice = new import_obsidian.Notice("\u6B63\u5728\u5904\u7406\u56FE\u7247... 0/" + matches.length, 0);
+      progressNotice = new import_obsidian.Notice("\u6B63\u5728\u5904\u7406\u5A92\u4F53\u6587\u4EF6... 0/" + matches.length, 0);
     }
     const replacements = [];
     for (let i = 0; i < matches.length; i++) {
@@ -303,7 +313,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
       if (match[1] !== void 0) {
         const altText = match[1];
         const imagePath = match[2];
-        if (this.settings.skipBase64Images && imagePath.startsWith("data:image")) {
+        if (this.settings.skipBase64Images && /^data:(image|video)\//.test(imagePath)) {
           skippedCount++;
           const displayPath = imagePath.substring(0, 30) + "...";
           details.push({ path: displayPath, status: "skipped", reason: "\u5DF2\u662F Base64 \u683C\u5F0F" });
@@ -314,15 +324,16 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
         if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
           skippedCount++;
-          details.push({ path: imagePath, status: "skipped", reason: "\u7F51\u7EDC\u56FE\u7247\uFF08\u4E0D\u652F\u6301\uFF09" });
+          details.push({ path: imagePath, status: "skipped", reason: "\u7F51\u7EDC\u5A92\u4F53\uFF08\u4E0D\u652F\u6301\uFF09" });
           if (this.settings.showConversionLog) {
-            console.log(`[\u8DF3\u8FC7] ${imagePath} - \u539F\u56E0: \u7F51\u7EDC\u56FE\u7247\u4E0D\u652F\u6301\u8F6C\u6362`);
+            console.log(`[\u8DF3\u8FC7] ${imagePath} - \u539F\u56E0: \u7F51\u7EDC\u5A92\u4F53\u4E0D\u652F\u6301\u8F6C\u6362`);
           }
           continue;
         }
-        const base64 = await this.imageToBase64(imagePath, sourceFile);
-        if (base64) {
-          replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${altText}](${base64})` });
+        const embedded = await this.mediaToBase64(imagePath, sourceFile);
+        if (embedded) {
+          const replacement = embedded.isVideo ? `<video controls src="${embedded.dataUri}"></video>` : `![${altText}](${embedded.dataUri})`;
+          replacements.push({ index: matchIndex, length: fullMatch.length, replacement });
           convertedCount++;
           details.push({ path: imagePath, status: "success" });
           if (this.settings.showConversionLog) {
@@ -346,9 +357,10 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
           }
           continue;
         }
-        const base64 = await this.imageToBase64(imageName, sourceFile);
-        if (base64) {
-          replacements.push({ index: matchIndex, length: fullMatch.length, replacement: `![${imageName}](${base64})` });
+        const embedded = await this.mediaToBase64(imageName, sourceFile);
+        if (embedded) {
+          const replacement = embedded.isVideo ? `<video controls src="${embedded.dataUri}"></video>` : `![${imageName}](${embedded.dataUri})`;
+          replacements.push({ index: matchIndex, length: fullMatch.length, replacement });
           convertedCount++;
           details.push({ path: displayPath, status: "success" });
           if (this.settings.showConversionLog) {
@@ -363,7 +375,7 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
         }
       }
       if (progressNotice) {
-        progressNotice.setMessage(`\u6B63\u5728\u5904\u7406\u56FE\u7247... ${i + 1}/${matches.length}`);
+        progressNotice.setMessage(`\u6B63\u5728\u5904\u7406\u5A92\u4F53\u6587\u4EF6... ${i + 1}/${matches.length}`);
       }
     }
     if (progressNotice) {
@@ -379,31 +391,32 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
     }
     return { content: result, convertedCount, skippedCount, details };
   }
-  // ========== 图片转 Base64 ==========
-  async imageToBase64(imagePath, sourceFile) {
+  // ========== 媒体文件（图片/视频）转 Base64 ==========
+  async mediaToBase64(mediaPath, sourceFile) {
     try {
-      const imageFile = this.resolveImagePath(imagePath, sourceFile);
-      if (!imageFile) {
+      const mediaFile = this.resolveImagePath(mediaPath, sourceFile);
+      if (!mediaFile) {
         if (this.settings.showConversionLog) {
           console.warn(`  \u2514\u2500 \u8DEF\u5F84\u89E3\u6790\u5931\u8D25: \u5728\u4EE5\u4E0B\u4F4D\u7F6E\u90FD\u672A\u627E\u5230\u6587\u4EF6`);
-          console.warn(`     - Vault \u6839\u76EE\u5F55: ${imagePath}`);
+          console.warn(`     - Vault \u6839\u76EE\u5F55: ${mediaPath}`);
           if (sourceFile.parent) {
-            console.warn(`     - \u76F8\u5BF9\u8DEF\u5F84: ${sourceFile.parent.path}/${imagePath}`);
+            console.warn(`     - \u76F8\u5BF9\u8DEF\u5F84: ${sourceFile.parent.path}/${mediaPath}`);
           }
         }
         return null;
       }
       if (this.settings.showConversionLog) {
-        console.log(`  \u2514\u2500 \u6587\u4EF6\u5DF2\u627E\u5230: ${imageFile.path}`);
+        console.log(`  \u2514\u2500 \u6587\u4EF6\u5DF2\u627E\u5230: ${mediaFile.path}`);
       }
-      const arrayBuffer = await this.app.vault.readBinary(imageFile);
+      const arrayBuffer = await this.app.vault.readBinary(mediaFile);
       const base64 = this.arrayBufferToBase64(arrayBuffer);
-      const mimeType = this.getMimeType(imageFile.extension);
+      const mimeType = this.getMimeType(mediaFile.extension);
+      const isVideo = this.isVideoFile(mediaFile.extension);
       if (this.settings.showConversionLog) {
         const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(2);
-        console.log(`  \u2514\u2500 \u6587\u4EF6\u5927\u5C0F: ${sizeKB} KB, MIME: ${mimeType}`);
+        console.log(`  \u2514\u2500 \u6587\u4EF6\u5927\u5C0F: ${sizeKB} KB, MIME: ${mimeType}, \u7C7B\u578B: ${isVideo ? "\u89C6\u9891" : "\u56FE\u7247"}`);
       }
-      return `data:${mimeType};base64,${base64}`;
+      return { dataUri: `data:${mimeType};base64,${base64}`, isVideo };
     } catch (error) {
       if (this.settings.showConversionLog) {
         console.error(`  \u2514\u2500 \u8BFB\u53D6\u6216\u8F6C\u6362\u5931\u8D25: ${error.message}`);
@@ -467,15 +480,26 @@ var MDImageEmbedPlugin = class extends import_obsidian.Plugin {
   // ========== 获取 MIME 类型 ==========
   getMimeType(extension) {
     const mimeTypes = {
+      // 图片
       "png": "image/png",
       "jpg": "image/jpeg",
       "jpeg": "image/jpeg",
       "gif": "image/gif",
       "webp": "image/webp",
       "svg": "image/svg+xml",
-      "bmp": "image/bmp"
+      "bmp": "image/bmp",
+      // 视频
+      "mp4": "video/mp4",
+      "webm": "video/webm",
+      "mov": "video/quicktime",
+      "avi": "video/x-msvideo",
+      "mkv": "video/x-matroska"
     };
-    return mimeTypes[extension.toLowerCase()] || "image/png";
+    return mimeTypes[extension.toLowerCase()] || "application/octet-stream";
+  }
+  // ========== 判断是否为视频文件 ==========
+  isVideoFile(extension) {
+    return ["mp4", "webm", "mov", "avi", "mkv"].includes(extension.toLowerCase());
   }
 };
 var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
@@ -538,6 +562,10 @@ var MDImageEmbedSettingTab = class extends import_obsidian.PluginSettingTab {
       folderModal.open();
     }));
     defaultPathSetting.addButton((button) => button.setButtonText("\u7CFB\u7EDF\u6D4F\u89C8").onClick(async () => {
+      if (!dialog || !remote) {
+        new import_obsidian.Notice('\u5F53\u524D Obsidian \u7248\u672C\u4E0D\u652F\u6301\u7CFB\u7EDF\u5BF9\u8BDD\u6846\uFF0C\u8BF7\u4F7F\u7528 "Vault\u5185\u6D4F\u89C8" \u6216\u624B\u52A8\u8F93\u5165\u8DEF\u5F84');
+        return;
+      }
       try {
         const vaultPath = this.app.vault.adapter.basePath;
         const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
@@ -603,6 +631,10 @@ var ExportDialog = class extends import_obsidian.Modal {
       folderModal.open();
     }));
     pathSetting.addButton((button) => button.setButtonText("\u7CFB\u7EDF\u6D4F\u89C8").onClick(async () => {
+      if (!dialog || !remote) {
+        new import_obsidian.Notice('\u5F53\u524D Obsidian \u7248\u672C\u4E0D\u652F\u6301\u7CFB\u7EDF\u5BF9\u8BDD\u6846\uFF0C\u8BF7\u4F7F\u7528 "Vault\u5185\u6D4F\u89C8" \u6216\u624B\u52A8\u8F93\u5165\u8DEF\u5F84');
+        return;
+      }
       try {
         const vaultPath = this.app.vault.adapter.basePath;
         const result = await dialog.showOpenDialog(remote.getCurrentWindow(), {
