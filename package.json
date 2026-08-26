@@ -1,6 +1,6 @@
 {
 	"name": "md-image-embed",
-	"version": "2.6.1",
+	"version": "2.7.0",
 	"description": "Obsidian plugin to convert images and videos to base64",
 	"main": "main.js",
 	"scripts": {
